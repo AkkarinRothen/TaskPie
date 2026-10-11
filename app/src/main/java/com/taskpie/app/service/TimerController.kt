@@ -1,0 +1,539 @@
+package com.taskpie.app.service
+
+import android.content.Context
+import android.content.Intent
+import android.media.AudioAttributes
+import android.media.RingtoneManager
+import android.media.ToneGenerator
+import android.media.AudioManager
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import com.taskpie.app.TaskPieApplication
+import com.taskpie.app.model.ActivityItem
+import com.taskpie.app.model.RoutineItem
+import com.taskpie.app.model.RoutineStep
+import com.taskpie.app.model.SessionSummary
+import com.taskpie.app.model.Stage
+import com.taskpie.app.model.StageExecutionRecord
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+
+object TimerController {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var tickerJob: Job? = null
+
+    private val _timerState = MutableStateFlow(TimerState())
+    val timerState: StateFlow<TimerState> = _timerState.asStateFlow()
+
+    private var appContext: Context? = null
+    private var repositoryScope: CoroutineScope? = null
+    private var voiceManager: VoiceAnnouncementManager? = null
+
+    private const val PREFS_NAME = "taskpie_settings"
+    private const val PREF_VOICE_ENABLED = "voice_announcements_enabled"
+
+    fun getVoiceEnabledPreference(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(PREF_VOICE_ENABLED, true)
+    }
+
+    fun setVoiceEnabledPreference(context: Context, enabled: Boolean) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(PREF_VOICE_ENABLED, enabled).apply()
+    }
+
+    fun toggleVoice() {
+        val newVoiceState = !_timerState.value.isVoiceEnabled
+        _timerState.update { it.copy(isVoiceEnabled = newVoiceState) }
+        appContext?.let { setVoiceEnabledPreference(it, newVoiceState) }
+        if (!newVoiceState) {
+            voiceManager?.stop()
+        }
+    }
+
+    fun initialize(context: Context) {
+        appContext = context.applicationContext
+        if (voiceManager == null) {
+            voiceManager = VoiceAnnouncementManager(context.applicationContext)
+        }
+        val defaultVoice = getVoiceEnabledPreference(context)
+        _timerState.update { it.copy(isVoiceEnabled = defaultVoice) }
+        repositoryScope = (context.applicationContext as? TaskPieApplication)?.let {
+            CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        }
+    }
+
+    fun startSingleActivitySession(
+        context: Context,
+        activity: ActivityItem,
+        customSessionName: String? = null,
+        voiceEnabled: Boolean? = null
+    ) {
+        val routineStep = RoutineStep(
+            activityId = activity.id,
+            activityTitle = activity.title,
+            stages = activity.stages,
+            autoAdvance = true
+        )
+        startSession(
+            context = context,
+            title = customSessionName?.takeIf { it.isNotBlank() } ?: activity.title,
+            contextType = "ACTIVITY",
+            parentTitle = null,
+            steps = listOf(routineStep),
+            voiceEnabled = voiceEnabled
+        )
+    }
+
+    fun startRoutineSession(
+        context: Context,
+        routine: RoutineItem,
+        customSessionName: String? = null,
+        voiceEnabled: Boolean? = null
+    ) {
+        startSession(
+            context = context,
+            title = customSessionName?.takeIf { it.isNotBlank() } ?: routine.title,
+            contextType = "ROUTINE",
+            parentTitle = routine.title,
+            steps = routine.steps,
+            voiceEnabled = voiceEnabled
+        )
+    }
+
+    fun startProjectActivitySession(
+        context: Context,
+        projectName: String,
+        activity: ActivityItem,
+        customSessionName: String? = null,
+        voiceEnabled: Boolean? = null
+    ) {
+        val routineStep = RoutineStep(
+            activityId = activity.id,
+            activityTitle = activity.title,
+            stages = activity.stages,
+            autoAdvance = true
+        )
+        startSession(
+            context = context,
+            title = customSessionName?.takeIf { it.isNotBlank() } ?: activity.title,
+            contextType = "PROJECT",
+            parentTitle = projectName,
+            steps = listOf(routineStep),
+            voiceEnabled = voiceEnabled
+        )
+    }
+
+    fun startSession(
+        context: Context,
+        title: String,
+        contextType: String,
+        parentTitle: String?,
+        steps: List<RoutineStep>,
+        voiceEnabled: Boolean? = null
+    ) {
+        if (steps.isEmpty() || steps.all { it.stages.isEmpty() }) return
+
+        val isVoice = voiceEnabled ?: getVoiceEnabledPreference(context)
+        setVoiceEnabledPreference(context, isVoice)
+
+        if (voiceManager == null) {
+            voiceManager = VoiceAnnouncementManager(context.applicationContext)
+        }
+
+        val totalPlannedSeconds = steps.sumOf { it.totalDurationSeconds }
+        val firstStep = steps[0]
+        val firstStage = firstStep.stages.firstOrNull() ?: return
+
+        _timerState.value = TimerState(
+            status = TimerStatus.RUNNING,
+            sessionTitle = title,
+            contextType = contextType,
+            parentTitle = parentTitle,
+            routineSteps = steps,
+            currentActivityIndex = 0,
+            currentStageIndex = 0,
+            remainingSeconds = firstStage.durationSeconds,
+            elapsedSecondsInCurrentStage = 0,
+            totalElapsedSecondsSession = 0,
+            totalPlannedSecondsSession = totalPlannedSeconds,
+            records = emptyList(),
+            completedSummary = null,
+            isVoiceEnabled = isVoice
+        )
+
+        if (isVoice) {
+            voiceManager?.speak("Iniciando: ${firstStage.name}")
+        }
+
+        startForegroundService(context)
+        startTicker()
+    }
+
+    fun pause() {
+        if (_timerState.value.status == TimerStatus.RUNNING) {
+            _timerState.update { it.copy(status = TimerStatus.PAUSED) }
+            stopTicker()
+            voiceManager?.stop()
+            updateNotification()
+        }
+    }
+
+    fun resume(context: Context) {
+        if (_timerState.value.status == TimerStatus.PAUSED) {
+            _timerState.update { it.copy(status = TimerStatus.RUNNING) }
+            startTicker()
+            updateNotification()
+        }
+    }
+
+    fun skipCurrentStage() {
+        val state = _timerState.value
+        val stage = state.currentStage ?: return
+        val activity = state.currentActivity ?: return
+
+        voiceManager?.stop()
+
+        val record = StageExecutionRecord(
+            stageId = stage.id,
+            stageName = stage.name,
+            activityName = activity.activityTitle,
+            plannedSeconds = stage.durationSeconds,
+            actualSeconds = state.elapsedSecondsInCurrentStage,
+            isSkipped = true,
+            isCompleted = false
+        )
+
+        _timerState.update {
+            it.copy(records = it.records + record)
+        }
+
+        advanceToNextStage(fromSkip = true)
+    }
+
+    fun advanceManualNextActivity() {
+        if (_timerState.value.status == TimerStatus.WAITING_MANUAL_ADVANCE) {
+            val state = _timerState.value
+            val nextActivityIdx = state.currentActivityIndex + 1
+            if (nextActivityIdx < state.routineSteps.size) {
+                val nextActivity = state.routineSteps[nextActivityIdx]
+                val firstStage = nextActivity.stages.firstOrNull()
+                if (firstStage != null) {
+                    _timerState.update {
+                        it.copy(
+                            status = TimerStatus.RUNNING,
+                            currentActivityIndex = nextActivityIdx,
+                            currentStageIndex = 0,
+                            remainingSeconds = firstStage.durationSeconds,
+                            elapsedSecondsInCurrentStage = 0
+                        )
+                    }
+                    if (_timerState.value.isVoiceEnabled) {
+                        voiceManager?.speak("Iniciando: ${firstStage.name}")
+                    }
+                    startTicker()
+                    updateNotification()
+                }
+            }
+        }
+    }
+
+    fun stopSession(context: Context) {
+        stopTicker()
+        voiceManager?.stop()
+        _timerState.update { it.copy(status = TimerStatus.IDLE) }
+        stopForegroundService(context)
+    }
+
+    private fun startTicker() {
+        tickerJob?.cancel()
+        tickerJob = scope.launch {
+            while (isActive && _timerState.value.status == TimerStatus.RUNNING) {
+                delay(1000L)
+                tick()
+            }
+        }
+    }
+
+    private fun stopTicker() {
+        tickerJob?.cancel()
+        tickerJob = null
+    }
+
+    private fun tick() {
+        val currentState = _timerState.value
+        if (currentState.status != TimerStatus.RUNNING) return
+
+        val remaining = currentState.remainingSeconds - 1
+        val elapsedStage = currentState.elapsedSecondsInCurrentStage + 1
+        val totalElapsed = currentState.totalElapsedSecondsSession + 1
+
+        if (remaining <= 0) {
+            // Stage completed!
+            val currentStage = currentState.currentStage
+            val currentActivity = currentState.currentActivity
+            if (currentStage != null && currentActivity != null) {
+                val record = StageExecutionRecord(
+                    stageId = currentStage.id,
+                    stageName = currentStage.name,
+                    activityName = currentActivity.activityTitle,
+                    plannedSeconds = currentStage.durationSeconds,
+                    actualSeconds = elapsedStage,
+                    isSkipped = false,
+                    isCompleted = true
+                )
+                _timerState.update {
+                    it.copy(
+                        records = it.records + record,
+                        totalElapsedSecondsSession = totalElapsed
+                    )
+                }
+            }
+
+            triggerAlert()
+            advanceToNextStage(fromSkip = false)
+        } else {
+            _timerState.update {
+                it.copy(
+                    remainingSeconds = remaining,
+                    elapsedSecondsInCurrentStage = elapsedStage,
+                    totalElapsedSecondsSession = totalElapsed
+                )
+            }
+            checkVoiceAnnouncements(currentState.currentStage, remaining)
+            updateNotification()
+        }
+    }
+
+    private fun checkVoiceAnnouncements(stage: Stage?, remainingSeconds: Long) {
+        if (!_timerState.value.isVoiceEnabled || stage == null) return
+        val totalSeconds = stage.durationSeconds
+        val halfTime = totalSeconds / 2
+
+        when {
+            // Countdown last 10 seconds
+            totalSeconds > 15 && remainingSeconds == 10L -> {
+                voiceManager?.speak("10 segundos")
+            }
+            totalSeconds > 15 && remainingSeconds in 1L..5L -> {
+                voiceManager?.speak(remainingSeconds.toString())
+            }
+
+            // 1 minute remaining
+            remainingSeconds == 60L && totalSeconds > 60L -> {
+                if (halfTime == 60L) {
+                    voiceManager?.speak("Último minuto, mitad del tiempo")
+                } else {
+                    voiceManager?.speak("Último minuto")
+                }
+            }
+
+            // 5 minutes remaining
+            remainingSeconds == 300L && totalSeconds > 300L -> {
+                if (halfTime == 300L) {
+                    voiceManager?.speak("Quedan 5 minutos, mitad del tiempo")
+                } else {
+                    voiceManager?.speak("Quedan 5 minutos")
+                }
+            }
+
+            // Half time (only if total duration >= 120s and not coinciding with 60s or 300s)
+            totalSeconds >= 120L && remainingSeconds == halfTime && remainingSeconds != 60L && remainingSeconds != 300L -> {
+                voiceManager?.speak("Mitad del tiempo")
+            }
+        }
+    }
+
+    private fun advanceToNextStage(fromSkip: Boolean) {
+        val state = _timerState.value
+        val currentActivity = state.currentActivity ?: return
+        val currentStageIdx = state.currentStageIndex
+
+        if (currentStageIdx + 1 < currentActivity.stages.size) {
+            // Next stage in same activity
+            val nextStage = currentActivity.stages[currentStageIdx + 1]
+            _timerState.update {
+                it.copy(
+                    currentStageIndex = currentStageIdx + 1,
+                    remainingSeconds = nextStage.durationSeconds,
+                    elapsedSecondsInCurrentStage = 0
+                )
+            }
+            if (_timerState.value.isVoiceEnabled) {
+                if (fromSkip) {
+                    voiceManager?.speak("Iniciando: ${nextStage.name}")
+                } else {
+                    scope.launch {
+                        delay(800L) // Wait for vibration & tone
+                        voiceManager?.speak("Iniciando: ${nextStage.name}")
+                    }
+                }
+            }
+            updateNotification()
+        } else {
+            // End of current activity! Check if there's a next activity in the routine
+            val nextActivityIdx = state.currentActivityIndex + 1
+            if (nextActivityIdx < state.routineSteps.size) {
+                val nextActivity = state.routineSteps[nextActivityIdx]
+                val firstStage = nextActivity.stages.firstOrNull()
+
+                if (firstStage != null) {
+                    if (currentActivity.autoAdvance) {
+                        // Auto-advance directly
+                        _timerState.update {
+                            it.copy(
+                                currentActivityIndex = nextActivityIdx,
+                                currentStageIndex = 0,
+                                remainingSeconds = firstStage.durationSeconds,
+                                elapsedSecondsInCurrentStage = 0
+                            )
+                        }
+                        if (_timerState.value.isVoiceEnabled) {
+                            scope.launch {
+                                delay(800L)
+                                voiceManager?.speak("Iniciando: ${firstStage.name}")
+                            }
+                        }
+                        updateNotification()
+                    } else {
+                        // Requires manual confirmation!
+                        stopTicker()
+                        _timerState.update {
+                            it.copy(
+                                status = TimerStatus.WAITING_MANUAL_ADVANCE
+                            )
+                        }
+                        updateNotification()
+                    }
+                } else {
+                    finishSession()
+                }
+            } else {
+                // Whole session finished!
+                finishSession()
+            }
+        }
+    }
+
+    private fun finishSession() {
+        stopTicker()
+        val state = _timerState.value
+        val completedCount = state.records.count { it.isCompleted && !it.isSkipped }
+        val skippedCount = state.records.count { it.isSkipped }
+
+        if (_timerState.value.isVoiceEnabled) {
+            scope.launch {
+                delay(700L)
+                voiceManager?.speak("Sesión completada")
+            }
+        }
+
+        val summary = SessionSummary(
+            title = state.sessionTitle,
+            contextType = state.contextType,
+            parentTitle = state.parentTitle,
+            totalPlannedSeconds = state.totalPlannedSecondsSession,
+            totalActualSeconds = state.totalElapsedSecondsSession,
+            completedStagesCount = completedCount,
+            skippedStagesCount = skippedCount,
+            stageRecords = state.records
+        )
+
+        _timerState.update {
+            it.copy(
+                status = TimerStatus.COMPLETED,
+                completedSummary = summary
+            )
+        }
+
+        // Save session summary to DB
+        appContext?.let { ctx ->
+            (ctx.applicationContext as? TaskPieApplication)?.let { app ->
+                CoroutineScope(Dispatchers.IO).launch {
+                    app.repository.saveSessionSummary(summary)
+                }
+            }
+            stopForegroundService(ctx)
+        }
+    }
+
+    private fun triggerAlert() {
+        appContext?.let { ctx ->
+            // Vibrate
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val vibratorManager = ctx.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                    val vibrator = vibratorManager?.defaultVibrator
+                    val pattern = longArrayOf(0, 300, 150, 300, 150, 400)
+                    vibrator?.vibrate(VibrationEffect.createWaveform(pattern, -1))
+                } else {
+                    @Suppress("DEPRECATION")
+                    val vibrator = ctx.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+                    val pattern = longArrayOf(0, 300, 150, 300, 150, 400)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        vibrator?.vibrate(VibrationEffect.createWaveform(pattern, -1))
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator?.vibrate(pattern, -1)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            // Play notification tone
+            try {
+                val notification = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                val ringtone = RingtoneManager.getRingtone(ctx, notification)
+                ringtone?.play()
+            } catch (e: Exception) {
+                // Fallback to ToneGenerator
+                try {
+                    val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100)
+                    toneGen.startTone(ToneGenerator.TONE_PROP_BEEP2, 400)
+                } catch (t: Exception) {
+                    t.printStackTrace()
+                }
+            }
+        }
+    }
+
+    private fun startForegroundService(context: Context) {
+        val intent = Intent(context, TimerService::class.java).apply {
+            action = TimerService.ACTION_START
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(intent)
+        } else {
+            context.startService(intent)
+        }
+    }
+
+    private fun updateNotification() {
+        appContext?.let { ctx ->
+            val intent = Intent(ctx, TimerService::class.java).apply {
+                action = TimerService.ACTION_UPDATE_NOTIFICATION
+            }
+            ctx.startService(intent)
+        }
+    }
+
+    private fun stopForegroundService(context: Context) {
+        val intent = Intent(context, TimerService::class.java).apply {
+            action = TimerService.ACTION_STOP
+        }
+        context.startService(intent)
+    }
+}

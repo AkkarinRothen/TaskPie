@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366F1" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+    <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#06B6D4" />
+    </linearGradient>
+    <linearGradient id="grad3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#EC4899" />
+      <stop offset="100%" stop-color="#F43F5E" />
+    </linearGradient>
+    <linearGradient id="grad4" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="100%" stop-color="#14B8A6" />
+    </linearGradient>
+  </defs>
+  <!-- Background circle -->
+  <circle cx="50" cy="50" r="48" fill="#0f172a" stroke="#1e293b" stroke-width="2" />
+  <!-- Pie Slices -->
+  <!-- Slice 1 (12 to 3 oclock) -->
+  <path d="M 50 50 L 50 14 A 36 36 0 0 1 86 50 Z" fill="url(#grad1)" />
+  <!-- Slice 2 (3 to 6 oclock) -->
+  <path d="M 50 50 L 86 50 A 36 36 0 0 1 50 86 Z" fill="url(#grad2)" />
+  <!-- Slice 3 (6 to 9 oclock) -->
+  <path d="M 50 50 L 50 86 A 36 36 0 0 1 14 50 Z" fill="url(#grad3)" />
+  <!-- Slice 4 (9 to 12 oclock) -->
+  <path d="M 50 50 L 14 50 A 36 36 0 0 1 50 14 Z" fill="url(#grad4)" />
+  <!-- Inner Donut cutout -->
+  <circle cx="50" cy="50" r="18" fill="#0f172a" />
+  <circle cx="50" cy="50" r="10" fill="#6366F1" opacity="0.9" />
+</svg>
