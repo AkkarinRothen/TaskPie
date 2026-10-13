@@ -8,6 +8,7 @@ interface ShortcutsModalProps {
 export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ onClose }) => {
   const shortcuts = [
     { key: 'Espacio', desc: 'Pausar o reanudar el temporizador activo' },
+    { key: 'P', desc: 'Abrir / alternar ventana flotante reducida (Picture-in-Picture)' },
     { key: 'S', desc: 'Saltar inmediatamente a la siguiente etapa' },
     { key: 'N', desc: 'Avanzar al siguiente bloque cuando hay pausa manual' },
     { key: 'M', desc: 'Activar o desactivar anuncios de voz (TTS en español)' },

@@ -4,6 +4,7 @@ import {
   Pause,
   SkipForward,
   Minimize2,
+  PictureInPicture2,
   Volume2,
   VolumeX,
   Mic,
@@ -25,7 +26,10 @@ export const ActiveSessionModal: React.FC = () => {
     toggleVoice,
     toggleSound,
     isSessionModalOpen,
-    setIsSessionModalOpen
+    setIsSessionModalOpen,
+    isPipActive,
+    isPipSupported,
+    togglePip
   } = useTimer();
 
   if (!isSessionModalOpen || timerState.status === 'IDLE') return null;
@@ -138,6 +142,24 @@ export const ActiveSessionModal: React.FC = () => {
             {timerState.isSoundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
             <span>{timerState.isSoundEnabled ? 'Alertas ON' : 'Alertas OFF'}</span>
           </button>
+
+          {isPipSupported && (
+            <button
+              onClick={togglePip}
+              className="btn btn-secondary btn-sm"
+              title={isPipActive ? 'Cerrar ventana flotante (P)' : 'Ventana flotante / PiP (P)'}
+              style={{
+                color: isPipActive ? 'var(--accent-primary)' : 'inherit',
+                borderColor: isPipActive ? 'var(--accent-primary)' : undefined,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <PictureInPicture2 size={16} />
+              <span>PiP (P)</span>
+            </button>
+          )}
 
           <button
             onClick={() => setIsSessionModalOpen(false)}

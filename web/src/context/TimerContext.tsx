@@ -1,8 +1,11 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AudioService } from '../services/audio';
 import { NotificationService } from '../services/notifications';
 import { SpeechService } from '../services/speech';
 import { StorageService } from '../services/storage';
+import { PipService } from '../services/pipService';
+import { PipFloatingTimer } from '../components/PipFloatingTimer';
 import type {
   ActivityItem,
   ProjectItem,
@@ -29,6 +32,11 @@ interface TimerContextValue {
   closeCompletedSummary: () => void;
   isSessionModalOpen: boolean;
   setIsSessionModalOpen: (open: boolean) => void;
+  isPipActive: boolean;
+  isPipSupported: boolean;
+  openPip: () => Promise<void>;
+  closePip: () => void;
+  togglePip: () => void;
 }
 
 const initialTimerState: TimerState = {
@@ -54,6 +62,8 @@ const TimerContext = createContext<TimerContextValue | null>(null);
 export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, setState] = useState<TimerState>(initialTimerState);
   const [isSessionModalOpen, setIsSessionModalOpen] = useState(false);
+  const [pipWindow, setPipWindow] = useState<Window | null>(null);
+  const [isPipActive, setIsPipActive] = useState(false);
   const workerRef = useRef<Worker | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -121,6 +131,11 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       } else if (e.key === 'm' || e.key === 'M') {
         e.preventDefault();
         toggleVoice();
+      } else if (e.key === 'p' || e.key === 'P') {
+        if (current.status !== 'IDLE') {
+          e.preventDefault();
+          togglePip();
+        }
       } else if (e.key === 'f' || e.key === 'F') {
         if (current.status !== 'IDLE') {
           e.preventDefault();
@@ -131,7 +146,7 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isSessionModalOpen]);
+  }, [isSessionModalOpen, isPipActive]);
 
   const postWorker = (cmd: 'START' | 'PAUSE' | 'STOP') => {
     workerRef.current?.postMessage({ command: cmd });
@@ -300,6 +315,7 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const finishSession = () => {
     postWorker('STOP');
+    closePip();
     const current = stateRef.current;
 
     const completedCount = current.records.filter((r) => r.isCompleted && !r.isSkipped).length;
@@ -496,8 +512,86 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const openPip = async () => {
+    const current = stateRef.current;
+    if (current.status === 'IDLE') return;
+
+    if (PipService.isDocumentPipSupported()) {
+      const win = await PipService.requestDocumentPip(340, 190, () => {
+        setPipWindow(null);
+        setIsPipActive(false);
+      });
+      if (win) {
+        setPipWindow(win);
+        setIsPipActive(true);
+      }
+    } else if (PipService.isVideoPipSupported()) {
+      const success = await PipService.requestVideoPip(
+        () => stateRef.current,
+        {
+          onPlay: () => resume(),
+          onPause: () => pause(),
+          onSkip: () => skipCurrentStage(),
+          onClose: () => {
+            setIsPipActive(false);
+          }
+        }
+      );
+      if (success) {
+        setIsPipActive(true);
+      }
+    }
+  };
+
+  const closePip = () => {
+    PipService.closePip();
+    setPipWindow(null);
+    setIsPipActive(false);
+  };
+
+  const togglePip = () => {
+    if (isPipActive || PipService.isPipActive()) {
+      closePip();
+    } else {
+      openPip();
+    }
+  };
+
+  // Cerrar ventana flotante automáticamente al volver a la pestaña de TaskPie
+  useEffect(() => {
+    const handleWindowFocus = () => {
+      if (PipService.isPipActive()) {
+        closePip();
+      }
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+    return () => window.removeEventListener('focus', handleWindowFocus);
+  }, []);
+
+  // Intentar abrir la ventana flotante automáticamente al minimizar la pestaña
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        const current = stateRef.current;
+        const isTimerActive =
+          current.status === 'RUNNING' ||
+          current.status === 'PAUSED' ||
+          current.status === 'WAITING_MANUAL_ADVANCE';
+
+        if (isTimerActive && !PipService.isPipActive()) {
+          openPip().catch(() => {});
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
   const stopSession = () => {
     postWorker('STOP');
+    closePip();
     SpeechService.stop();
     setState((prev) => ({
       ...prev,
@@ -542,10 +636,38 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         toggleSound,
         closeCompletedSummary,
         isSessionModalOpen,
-        setIsSessionModalOpen
+        setIsSessionModalOpen,
+        isPipActive,
+        isPipSupported: PipService.isPipSupported(),
+        openPip,
+        closePip,
+        togglePip
       }}
     >
       {children}
+      {pipWindow &&
+        createPortal(
+          <PipFloatingTimer
+            timerState={state}
+            onTogglePlayPause={() => {
+              if (state.status === 'RUNNING') pause();
+              else resume();
+            }}
+            onSkipStage={skipCurrentStage}
+            onAdvanceManual={advanceManualNextActivity}
+            onRestoreApp={() => {
+              window.focus();
+              setIsSessionModalOpen(true);
+              closePip();
+            }}
+            onStopSession={() => {
+              if (confirm('¿Detener y salir de la sesión actual?')) {
+                stopSession();
+              }
+            }}
+          />,
+          pipWindow.document.body
+        )}
     </TimerContext.Provider>
   );
 };

@@ -1,9 +1,9 @@
-import React from 'react';
 import {
   Play,
   Pause,
   SkipForward,
   Maximize2,
+  PictureInPicture2,
   Volume2,
   VolumeX,
   Mic,
@@ -23,7 +23,10 @@ export const LiveTimerDock: React.FC = () => {
     stopSession,
     toggleVoice,
     toggleSound,
-    setIsSessionModalOpen
+    setIsSessionModalOpen,
+    isPipActive,
+    isPipSupported,
+    togglePip
   } = useTimer();
 
   if (timerState.status === 'IDLE') return null;
@@ -207,6 +210,21 @@ export const LiveTimerDock: React.FC = () => {
         >
           <Square size={16} fill="var(--accent-coral)" />
         </button>
+
+        {isPipSupported && (
+          <button
+            onClick={togglePip}
+            className="btn btn-secondary btn-icon"
+            title={isPipActive ? 'Cerrar ventana flotante (P)' : 'Ventana flotante / PiP (P)'}
+            style={{
+              marginLeft: '4px',
+              color: isPipActive ? 'var(--accent-primary)' : 'inherit',
+              borderColor: isPipActive ? 'var(--accent-primary)' : undefined
+            }}
+          >
+            <PictureInPicture2 size={17} />
+          </button>
+        )}
 
         <button
           onClick={() => setIsSessionModalOpen(true)}
