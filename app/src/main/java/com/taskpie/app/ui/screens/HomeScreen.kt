@@ -56,6 +56,7 @@ fun HomeScreen(
 
     var activityToStart by remember { mutableStateOf<ActivityItem?>(null) }
     var routineToStart by remember { mutableStateOf<RoutineItem?>(null) }
+    var projectToStart by remember { mutableStateOf<ProjectItem?>(null) }
     var selectedCategoryFilter by remember { mutableStateOf("Todas") }
 
     // Search state
@@ -474,7 +475,8 @@ fun HomeScreen(
                                                     onCardClick = { selectedProjectId = project.id },
                                                     onOpenClick = { onNavigateToEditProject(project.id) },
                                                     onEditClick = { onNavigateToEditProject(project.id) },
-                                                    onDeleteClick = { viewModel.deleteProject(project.id) }
+                                                    onDeleteClick = { viewModel.deleteProject(project.id) },
+                                                    onStartClick = { projectToStart = project }
                                                 )
                                             }
                                         }
@@ -760,7 +762,8 @@ fun HomeScreen(
                                             linkedRoutinesCount = project.routineIds.size,
                                             onOpenClick = { onNavigateToEditProject(project.id) },
                                             onEditClick = { onNavigateToEditProject(project.id) },
-                                            onDeleteClick = { viewModel.deleteProject(project.id) }
+                                            onDeleteClick = { viewModel.deleteProject(project.id) },
+                                            onStartClick = { projectToStart = project }
                                         )
                                     }
                                 }
@@ -819,6 +822,24 @@ fun HomeScreen(
             onStart = { customName, voiceEnabled ->
                 viewModel.startRoutineSession(routine, customName, voiceEnabled)
                 routineToStart = null
+            }
+        )
+    }
+
+    // Start Project Dialog (Sequence)
+    projectToStart?.let { project ->
+        val totalSecs = project.routineIds.sumOf { rId ->
+            routines.find { it.id == rId }?.totalDurationSeconds ?: 0L
+        }
+        val mins = totalSecs / 60
+        StartSessionDialog(
+            defaultTitle = project.title,
+            totalDurationFormatted = "${mins}m",
+            initialVoiceEnabled = viewModel.getVoiceEnabledPreference(),
+            onDismiss = { projectToStart = null },
+            onStart = { customName, voiceEnabled ->
+                viewModel.startProjectSession(project, customName, voiceEnabled)
+                projectToStart = null
             }
         )
     }

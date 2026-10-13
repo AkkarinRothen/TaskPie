@@ -105,6 +105,25 @@ export const LiveTimerDock: React.FC = () => {
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               Etapa {timerState.currentStageIndex + 1} de {currentStep?.stages.length || 1}
             </span>
+            {currentStep?.totalIterations && currentStep.totalIterations > 1 && (
+              <>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>•</span>
+                <span
+                  style={{
+                    fontSize: '0.68rem',
+                    fontWeight: 700,
+                    color: 'var(--accent-secondary)',
+                    background: 'rgba(139, 92, 246, 0.15)',
+                    padding: '1px 6px',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(139, 92, 246, 0.3)'
+                  }}
+                >
+                  {currentStep.blockTitle ? `${currentStep.blockTitle} • ` : ''}Ronda{' '}
+                  {(currentStep.iterationIndex || 0) + 1}/{currentStep.totalIterations}
+                </span>
+              </>
+            )}
           </div>
 
           <h4

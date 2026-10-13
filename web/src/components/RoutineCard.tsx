@@ -4,6 +4,8 @@ import type { RoutineItem } from '../types/models';
 import { useTimer } from '../context/TimerContext';
 import { useData } from '../context/DataContext';
 
+import { calculateRoutineTotalSeconds } from '../types/models';
+
 interface RoutineCardProps {
   routine: RoutineItem;
   onEdit: (routine: RoutineItem) => void;
@@ -13,10 +15,7 @@ export const RoutineCard: React.FC<RoutineCardProps> = ({ routine, onEdit }) => 
   const { startRoutine } = useTimer();
   const { deleteRoutine } = useData();
 
-  const totalSeconds = routine.steps.reduce(
-    (acc, step) => acc + step.stages.reduce((sAcc, s) => sAcc + s.durationSeconds, 0),
-    0
-  );
+  const totalSeconds = calculateRoutineTotalSeconds(routine.steps);
   const totalStages = routine.steps.reduce((acc, step) => acc + step.stages.length, 0);
 
   const hours = Math.floor(totalSeconds / 3600);

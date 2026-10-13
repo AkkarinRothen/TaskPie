@@ -107,6 +107,9 @@ export const PipFloatingTimer: React.FC<PipFloatingTimerProps> = ({
               textOverflow: 'ellipsis'
             }}
           >
+            {currentStep?.totalIterations && currentStep.totalIterations > 1
+              ? `[R${(currentStep.iterationIndex || 0) + 1}/${currentStep.totalIterations}] `
+              : ''}
             {totalStages > 1 ? `${stageIndex}/${totalStages} • ` : ''}
             {stageTitle}
           </span>

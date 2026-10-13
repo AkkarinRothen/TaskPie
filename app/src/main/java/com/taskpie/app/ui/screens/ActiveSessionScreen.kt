@@ -178,6 +178,24 @@ fun ActiveSessionScreen(
                                             color = LightTextPrimary
                                         )
                                     )
+                                    if (currentAct != null && currentAct.totalIterations > 1) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(AccentIndigoLight)
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "${currentAct.blockTitle?.let { "$it • " } ?: ""}Ronda ${currentAct.iterationIndex + 1}/${currentAct.totalIterations}",
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = AccentIndigo
+                                                )
+                                            )
+                                        }
+                                    }
                                 }
 
                                 Text(

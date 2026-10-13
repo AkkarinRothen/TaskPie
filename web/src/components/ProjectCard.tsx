@@ -4,6 +4,8 @@ import type { ProjectItem } from '../types/models';
 import { useTimer } from '../context/TimerContext';
 import { useData } from '../context/DataContext';
 
+import { calculateRoutineTotalSeconds } from '../types/models';
+
 interface ProjectCardProps {
   project: ProjectItem;
   onEdit: (project: ProjectItem) => void;
@@ -14,7 +16,19 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onEdit }) => 
   const { activities, routines, deleteProject } = useData();
 
   const linkedActivities = activities.filter((a) => project.activityIds.includes(a.id));
-  const linkedRoutines = routines.filter((r) => project.routineIds.includes(r.id));
+  const routinesCount = project.routineIds.length;
+
+  const totalRoutinesSeconds = project.routineIds.reduce((acc, rId) => {
+    const rout = routines.find((r) => r.id === rId);
+    return acc + (rout ? calculateRoutineTotalSeconds(rout.steps) : 0);
+  }, 0);
+  const totalActivitiesSeconds = linkedActivities.reduce((acc, act) => {
+    return acc + act.stages.reduce((sAcc, s) => sAcc + s.durationSeconds, 0);
+  }, 0);
+  const totalSeconds = totalRoutinesSeconds + totalActivitiesSeconds;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const formattedDuration = hours > 0 ? `${hours}h ${minutes}m` : `${minutes} min`;
 
   return (
     <div
@@ -108,7 +122,23 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onEdit }) => 
             }}
           >
             <Layers size={13} color="var(--accent-secondary)" />
-            <span>{linkedRoutines.length} rutinas</span>
+            <span>{routinesCount} rutinas en secuencia</span>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '0.78rem',
+              padding: '4px 10px',
+              borderRadius: '6px',
+              background: 'var(--bg-tertiary)',
+              color: 'var(--text-secondary)',
+              border: '1px solid var(--border-subtle)'
+            }}
+          >
+            <span>⏱️ {formattedDuration}</span>
           </div>
         </div>
       </div>

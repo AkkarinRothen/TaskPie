@@ -266,6 +266,25 @@ export const ActiveSessionModal: React.FC = () => {
             <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600 }}>
               {currentStep?.activityTitle}
             </span>
+            {currentStep?.totalIterations && currentStep.totalIterations > 1 && (
+              <>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>•</span>
+                <span
+                  style={{
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    color: 'var(--accent-secondary)',
+                    background: 'rgba(139, 92, 246, 0.15)',
+                    padding: '2px 8px',
+                    borderRadius: 'var(--radius-full)',
+                    border: '1px solid rgba(139, 92, 246, 0.3)'
+                  }}
+                >
+                  {currentStep.blockTitle ? `${currentStep.blockTitle} • ` : ''}Ronda{' '}
+                  {(currentStep.iterationIndex || 0) + 1} de {currentStep.totalIterations}
+                </span>
+              </>
+            )}
           </div>
 
           <h3 style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)' }}>

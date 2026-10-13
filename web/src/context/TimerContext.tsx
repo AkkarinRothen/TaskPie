@@ -6,6 +6,7 @@ import { SpeechService } from '../services/speech';
 import { StorageService } from '../services/storage';
 import { PipService } from '../services/pipService';
 import { PipFloatingTimer } from '../components/PipFloatingTimer';
+import { unrollRoutineSteps } from '../types/models';
 import type {
   ActivityItem,
   ProjectItem,
@@ -410,7 +411,8 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const startRoutine = (routine: RoutineItem) => {
-    startSession(routine.title, 'ROUTINE', null, routine.steps);
+    const unrolledSteps = unrollRoutineSteps(routine.steps);
+    startSession(routine.title, 'ROUTINE', null, unrolledSteps);
   };
 
   const startProject = (
@@ -434,11 +436,12 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     });
 
-    // Agregar rutinas del proyecto
+    // Agregar rutinas del proyecto respetando la secuencia exacta y desglosando sus bloques
     project.routineIds.forEach((id) => {
       const rout = routines.find((r) => r.id === id);
       if (rout) {
-        steps.push(...rout.steps);
+        const unrolled = unrollRoutineSteps(rout.steps);
+        steps.push(...unrolled);
       }
     });
 

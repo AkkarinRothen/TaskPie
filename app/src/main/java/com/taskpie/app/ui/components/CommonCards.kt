@@ -461,7 +461,8 @@ fun ProjectCard(
     onDeleteClick: () -> Unit,
     modifier: Modifier = Modifier,
     isSelected: Boolean = false,
-    onCardClick: (() -> Unit)? = null
+    onCardClick: (() -> Unit)? = null,
+    onStartClick: (() -> Unit)? = null
 ) {
     Card(
         modifier = modifier
@@ -568,15 +569,36 @@ fun ProjectCard(
                     )
                 }
 
-                OutlinedButton(
-                    onClick = onOpenClick,
-                    shape = RoundedCornerShape(10.dp),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = "Ver",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = onOpenClick,
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "Ver",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
+                        )
+                    }
+
+                    if (onStartClick != null && linkedRoutinesCount > 0) {
+                        Button(
+                            onClick = onStartClick,
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Iniciar",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                            )
+                        }
+                    }
                 }
             }
         }

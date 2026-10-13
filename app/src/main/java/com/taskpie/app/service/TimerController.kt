@@ -11,12 +11,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import com.taskpie.app.TaskPieApplication
-import com.taskpie.app.model.ActivityItem
-import com.taskpie.app.model.RoutineItem
-import com.taskpie.app.model.RoutineStep
-import com.taskpie.app.model.SessionSummary
-import com.taskpie.app.model.Stage
-import com.taskpie.app.model.StageExecutionRecord
+import com.taskpie.app.model.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -108,7 +103,50 @@ object TimerController {
             title = customSessionName?.takeIf { it.isNotBlank() } ?: routine.title,
             contextType = "ROUTINE",
             parentTitle = routine.title,
-            steps = routine.steps,
+            steps = routine.steps.unrollSteps(),
+            voiceEnabled = voiceEnabled
+        )
+    }
+
+    fun startProjectSession(
+        context: Context,
+        project: ProjectItem,
+        activities: List<ActivityItem>,
+        routines: List<RoutineItem>,
+        customSessionName: String? = null,
+        voiceEnabled: Boolean? = null
+    ) {
+        val steps = mutableListOf<RoutineStep>()
+
+        // Actividades del proyecto
+        project.activityIds.forEach { actId ->
+            val act = activities.find { it.id == actId }
+            if (act != null) {
+                steps.add(
+                    RoutineStep(
+                        activityId = act.id,
+                        activityTitle = act.title,
+                        stages = act.stages,
+                        autoAdvance = true
+                    )
+                )
+            }
+        }
+
+        // Rutinas del proyecto respetando la secuencia exacta y desglosando sus bloques
+        project.routineIds.forEach { rId ->
+            val rout = routines.find { it.id == rId }
+            if (rout != null) {
+                steps.addAll(rout.steps.unrollSteps())
+            }
+        }
+
+        startSession(
+            context = context,
+            title = customSessionName?.takeIf { it.isNotBlank() } ?: project.title,
+            contextType = "PROJECT",
+            parentTitle = project.title,
+            steps = steps,
             voiceEnabled = voiceEnabled
         )
     }

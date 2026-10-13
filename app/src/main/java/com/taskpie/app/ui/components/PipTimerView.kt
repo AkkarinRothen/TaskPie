@@ -62,12 +62,16 @@ fun PipTimerView(
                 Spacer(modifier = Modifier.width(6.dp))
                 val stageTitle = timerState.currentStage?.name ?: "TaskPie"
                 val totalStages = timerState.currentActivity?.stages?.size ?: 1
+                val currentStep = timerState.routineSteps.getOrNull(timerState.currentActivityIndex)
+                val roundText = if (currentStep != null && currentStep.totalIterations > 1) {
+                    "[R${currentStep.iterationIndex + 1}/${currentStep.totalIterations}] "
+                } else ""
                 val stageIndexText = if (totalStages > 1) {
                     "${timerState.currentStageIndex + 1}/$totalStages • "
                 } else ""
 
                 Text(
-                    text = "$stageIndexText$stageTitle",
+                    text = "$roundText$stageIndexText$stageTitle",
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontWeight = FontWeight.SemiBold,
                         color = LightTextPrimary,

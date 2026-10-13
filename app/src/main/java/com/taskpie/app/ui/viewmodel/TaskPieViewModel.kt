@@ -144,6 +144,17 @@ class TaskPieViewModel(application: Application) : AndroidViewModel(application)
         TimerController.startRoutineSession(getApplication(), routine, sessionName, voiceEnabled)
     }
 
+    fun startProjectSession(project: ProjectItem, sessionName: String? = null, voiceEnabled: Boolean? = null) {
+        TimerController.startProjectSession(
+            getApplication(),
+            project,
+            activities.value,
+            routines.value,
+            sessionName,
+            voiceEnabled
+        )
+    }
+
     fun startProjectActivitySession(projectName: String, activity: ActivityItem, sessionName: String? = null, voiceEnabled: Boolean? = null) {
         TimerController.startProjectActivitySession(getApplication(), projectName, activity, sessionName, voiceEnabled)
     }

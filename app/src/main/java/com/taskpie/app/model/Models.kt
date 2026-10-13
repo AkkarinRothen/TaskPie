@@ -54,10 +54,96 @@ data class RoutineStep(
     val activityId: String,
     val activityTitle: String,
     val stages: List<Stage>,
-    val autoAdvance: Boolean = true // true = auto start next activity, false = wait for user confirmation
+    val autoAdvance: Boolean = true, // true = auto start next activity, false = wait for user confirmation
+    val blockId: String? = null,
+    val blockTitle: String? = null,
+    val blockRepeatCount: Int = 1,
+    val iterationIndex: Int = 0,
+    val totalIterations: Int = 1
 ) {
     val totalDurationSeconds: Long
         get() = stages.sumOf { it.durationSeconds }
+}
+
+data class RoutineBlock(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String = "",
+    val repeatCount: Int = 1,
+    val steps: List<RoutineStep> = emptyList()
+)
+
+fun List<RoutineStep>.toBlocks(): List<RoutineBlock> {
+    val blocks = mutableListOf<RoutineBlock>()
+    var currentBlock: RoutineBlock? = null
+    for (step in this) {
+        val bId = step.blockId
+        if (bId != null) {
+            if (currentBlock != null && currentBlock.id == bId) {
+                currentBlock = currentBlock.copy(steps = currentBlock.steps + step)
+                blocks[blocks.lastIndex] = currentBlock
+            } else {
+                currentBlock = RoutineBlock(
+                    id = bId,
+                    title = step.blockTitle ?: "Bloque",
+                    repeatCount = step.blockRepeatCount.coerceAtLeast(1),
+                    steps = listOf(step)
+                )
+                blocks.add(currentBlock)
+            }
+        } else {
+            currentBlock = RoutineBlock(
+                id = "block_${step.id}",
+                title = "",
+                repeatCount = 1,
+                steps = listOf(step)
+            )
+            blocks.add(currentBlock)
+        }
+    }
+    return blocks
+}
+
+fun List<RoutineBlock>.toFlatSteps(): List<RoutineStep> {
+    val result = mutableListOf<RoutineStep>()
+    for (b in this) {
+        val isRepeated = b.steps.size > 1 || b.title.isNotBlank() || b.repeatCount > 1
+        val bId = if (isRepeated) b.id else null
+        val bTitle = if (isRepeated) b.title.ifBlank { "Bloque" } else null
+        val bRepeat = if (isRepeated) b.repeatCount.coerceAtLeast(1) else 1
+        for (s in b.steps) {
+            result.add(
+                s.copy(
+                    blockId = bId,
+                    blockTitle = bTitle,
+                    blockRepeatCount = bRepeat
+                )
+            )
+        }
+    }
+    return result
+}
+
+fun List<RoutineStep>.unrollSteps(): List<RoutineStep> {
+    val blocks = this.toBlocks()
+    val unrolled = mutableListOf<RoutineStep>()
+    for (b in blocks) {
+        val repeats = b.repeatCount.coerceAtLeast(1)
+        for (r in 0 until repeats) {
+            for (s in b.steps) {
+                unrolled.add(
+                    s.copy(
+                        id = "${s.id}_iter_${r}_${System.currentTimeMillis()}",
+                        blockId = if (b.steps.size > 1 || repeats > 1) b.id else null,
+                        blockTitle = if (b.title.isNotBlank()) b.title else if (repeats > 1) "Bloque" else null,
+                        blockRepeatCount = repeats,
+                        iterationIndex = r,
+                        totalIterations = repeats
+                    )
+                )
+            }
+        }
+    }
+    return unrolled
 }
 
 data class RoutineItem(
@@ -69,7 +155,9 @@ data class RoutineItem(
     val createdAt: Long = System.currentTimeMillis()
 ) {
     val totalDurationSeconds: Long
-        get() = steps.sumOf { it.totalDurationSeconds }
+        get() = steps.toBlocks().sumOf { b ->
+            b.steps.sumOf { it.totalDurationSeconds } * b.repeatCount.coerceAtLeast(1)
+        }
 
     val totalStagesCount: Int
         get() = steps.sumOf { it.stages.size }
