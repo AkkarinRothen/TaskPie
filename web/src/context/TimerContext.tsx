@@ -527,6 +527,7 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (win) {
         setPipWindow(win);
         setIsPipActive(true);
+        setIsSessionModalOpen(false);
       }
     } else if (PipService.isVideoPipSupported()) {
       const success = await PipService.requestVideoPip(
@@ -542,6 +543,7 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       );
       if (success) {
         setIsPipActive(true);
+        setIsSessionModalOpen(false);
       }
     }
   };
@@ -559,18 +561,6 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       openPip();
     }
   };
-
-  // Cerrar ventana flotante automáticamente al volver a la pestaña de TaskPie
-  useEffect(() => {
-    const handleWindowFocus = () => {
-      if (PipService.isPipActive()) {
-        closePip();
-      }
-    };
-
-    window.addEventListener('focus', handleWindowFocus);
-    return () => window.removeEventListener('focus', handleWindowFocus);
-  }, []);
 
   // Intentar abrir la ventana flotante automáticamente al minimizar la pestaña
   useEffect(() => {

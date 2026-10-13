@@ -146,18 +146,19 @@ export const ActiveSessionModal: React.FC = () => {
           {isPipSupported && (
             <button
               onClick={togglePip}
-              className="btn btn-secondary btn-sm"
+              className={`btn ${isPipActive ? 'btn-primary' : 'btn-secondary'} btn-sm`}
               title={isPipActive ? 'Cerrar ventana flotante (P)' : 'Ventana flotante / PiP (P)'}
               style={{
                 color: isPipActive ? 'var(--accent-primary)' : 'inherit',
                 borderColor: isPipActive ? 'var(--accent-primary)' : undefined,
+                background: isPipActive ? 'rgba(99, 102, 241, 0.16)' : undefined,
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px'
               }}
             >
               <PictureInPicture2 size={16} />
-              <span>PiP (P)</span>
+              <span>{isPipActive ? 'PiP Activo' : 'PiP (P)'}</span>
             </button>
           )}
 

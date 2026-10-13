@@ -233,15 +233,24 @@ export const LiveTimerDock: React.FC = () => {
         {isPipSupported && (
           <button
             onClick={togglePip}
-            className="btn btn-secondary btn-icon"
+            className={`btn ${isPipActive ? 'btn-primary' : 'btn-secondary'} ${isPipActive ? '' : 'btn-icon'}`}
             title={isPipActive ? 'Cerrar ventana flotante (P)' : 'Ventana flotante / PiP (P)'}
             style={{
               marginLeft: '4px',
+              padding: isPipActive ? '4px 10px' : undefined,
+              gap: '6px',
               color: isPipActive ? 'var(--accent-primary)' : 'inherit',
-              borderColor: isPipActive ? 'var(--accent-primary)' : undefined
+              background: isPipActive ? 'rgba(99, 102, 241, 0.16)' : undefined,
+              borderColor: isPipActive ? 'var(--accent-primary)' : undefined,
+              boxShadow: isPipActive ? '0 0 10px rgba(99, 102, 241, 0.25)' : undefined
             }}
           >
-            <PictureInPicture2 size={17} />
+            <PictureInPicture2 size={16} />
+            {isPipActive && (
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.02em' }}>
+                PiP Activo
+              </span>
+            )}
           </button>
         )}
 
