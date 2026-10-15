@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Play,
   Pause,
@@ -36,6 +36,15 @@ export const ActiveSessionModal: React.FC = () => {
   } = useTimer();
 
   const [showMateMenu, setShowMateMenu] = useState(false);
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1000);
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const pieChartSize = Math.min(360, Math.max(220, windowWidth - 64));
 
   if (!isSessionModalOpen || timerState.status === 'IDLE') return null;
 
@@ -96,6 +105,7 @@ export const ActiveSessionModal: React.FC = () => {
     >
       {/* Top Header Bar */}
       <header
+        className="session-modal-header"
         style={{
           padding: '24px 36px',
           display: 'flex',
@@ -225,7 +235,7 @@ export const ActiveSessionModal: React.FC = () => {
 
           <button
             onClick={toggleVoice}
-            className="btn btn-secondary btn-sm"
+            className="btn btn-secondary btn-sm hide-text-mobile"
             style={{ color: timerState.isVoiceEnabled ? 'var(--accent-primary)' : 'var(--text-muted)' }}
           >
             {timerState.isVoiceEnabled ? <Mic size={16} /> : <MicOff size={16} />}
@@ -234,7 +244,7 @@ export const ActiveSessionModal: React.FC = () => {
 
           <button
             onClick={toggleSound}
-            className="btn btn-secondary btn-sm"
+            className="btn btn-secondary btn-sm hide-text-mobile"
             style={{ color: timerState.isSoundEnabled ? 'var(--accent-primary)' : 'var(--text-muted)' }}
           >
             {timerState.isSoundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
@@ -244,7 +254,7 @@ export const ActiveSessionModal: React.FC = () => {
           {isPipSupported && (
             <button
               onClick={togglePip}
-              className={`btn ${isPipActive ? 'btn-primary' : 'btn-secondary'} btn-sm`}
+              className={`btn ${isPipActive ? 'btn-primary' : 'btn-secondary'} btn-sm hide-text-mobile`}
               title={isPipActive ? 'Cerrar ventana flotante (P)' : 'Ventana flotante / PiP (P)'}
               style={{
                 color: isPipActive ? 'var(--accent-primary)' : 'inherit',
@@ -272,6 +282,7 @@ export const ActiveSessionModal: React.FC = () => {
 
       {/* Main Center Area */}
       <main
+        className="session-modal-main"
         style={{
           flex: 1,
           display: 'flex',
@@ -282,7 +293,8 @@ export const ActiveSessionModal: React.FC = () => {
           maxWidth: '1100px',
           margin: '0 auto',
           width: '100%',
-          gap: '24px'
+          gap: '24px',
+          overflowY: 'auto'
         }}
       >
         {/* Mate Alert Banner (when recently triggered within 12s) */}
@@ -330,7 +342,7 @@ export const ActiveSessionModal: React.FC = () => {
               stages={currentStep.stages}
               activeStageIndex={timerState.currentStageIndex}
               activeStageProgress={stageProgress}
-              size={360}
+              size={pieChartSize}
               donut={true}
               innerRadiusRatio={0.72}
               interactive={true}

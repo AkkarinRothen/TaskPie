@@ -98,30 +98,11 @@ export const ProjectEditorModal: React.FC<ProjectEditorModalProps> = ({
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 100,
-        background: 'rgba(9, 13, 22, 0.82)',
-        backdropFilter: 'blur(16px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px'
-      }}
-    >
+    <div className="modal-overlay">
       <div
-        className="glass-panel"
+        className="glass-panel modal-container"
         style={{
-          width: '100%',
-          maxWidth: '720px',
-          maxHeight: '92vh',
-          display: 'flex',
-          flexDirection: 'column',
-          borderRadius: 'var(--radius-xl)',
-          overflow: 'hidden',
-          boxShadow: 'var(--shadow-lg)'
+          maxWidth: '720px'
         }}
       >
         {/* Header */}

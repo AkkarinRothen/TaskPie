@@ -110,30 +110,11 @@ export const ActivityEditorModal: React.FC<ActivityEditorModalProps> = ({ initia
   const currentEditingStage = stages[editingStageIndex] || stages[0];
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 100,
-        background: 'rgba(9, 13, 22, 0.82)',
-        backdropFilter: 'blur(16px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px'
-      }}
-    >
+    <div className="modal-overlay">
       <div
-        className="glass-panel"
+        className="glass-panel modal-container"
         style={{
-          width: '100%',
-          maxWidth: '920px',
-          maxHeight: '90vh',
-          display: 'flex',
-          flexDirection: 'column',
-          borderRadius: 'var(--radius-xl)',
-          overflow: 'hidden',
-          boxShadow: 'var(--shadow-lg)'
+          maxWidth: '920px'
         }}
       >
         {/* Header */}
@@ -160,19 +141,9 @@ export const ActivityEditorModal: React.FC<ActivityEditorModalProps> = ({ initia
         </div>
 
         {/* Body 2 columns */}
-        <div style={{ display: 'flex', flex: 1, overflowY: 'auto' }}>
+        <div className="modal-two-columns">
           {/* Left Form: Basic info and Stage list */}
-          <div
-            style={{
-              flex: 1.2,
-              padding: '24px 28px',
-              borderRight: '1px solid var(--border-subtle)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '18px',
-              overflowY: 'auto'
-            }}
-          >
+          <div className="modal-column-left">
             <div>
               <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
                 Título de la Actividad *
@@ -334,12 +305,8 @@ export const ActivityEditorModal: React.FC<ActivityEditorModalProps> = ({ initia
 
           {/* Right Column: Selected Stage Editor & Real-time Pie Preview */}
           <div
+            className="modal-column-right"
             style={{
-              flex: 1,
-              padding: '24px 28px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '20px',
               background: 'rgba(0,0,0,0.1)'
             }}
           >

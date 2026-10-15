@@ -11,16 +11,24 @@ import {
   Moon,
   PieChart as PieIcon,
   Trash2,
-  FolderPlus
+  FolderPlus,
+  X
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 
 interface SidebarProps {
   onOpenFolderModal: () => void;
   onOpenShortcutsModal: () => void;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ onOpenFolderModal, onOpenShortcutsModal }) => {
+export const Sidebar: React.FC<SidebarProps> = ({
+  onOpenFolderModal,
+  onOpenShortcutsModal,
+  isOpen = false,
+  onClose
+}) => {
   const {
     activities,
     routines,
@@ -66,7 +74,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenFolderModal, onOpenShort
   ];
 
   return (
-    <aside className="app-sidebar">
+    <aside className={`app-sidebar ${isOpen ? 'open' : ''}`}>
       {/* Brand Header */}
       <div
         style={{
@@ -74,41 +82,54 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenFolderModal, onOpenShort
           borderBottom: '1px solid var(--border-subtle)',
           display: 'flex',
           alignItems: 'center',
+          justifyContent: 'space-between',
           gap: '12px'
         }}
       >
-        <div
-          style={{
-            width: '42px',
-            height: '42px',
-            borderRadius: '12px',
-            background: 'var(--gradient-brand)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: 'var(--shadow-glow)'
-          }}
-        >
-          <PieIcon size={24} color="#ffffff" />
-        </div>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <h1 style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '-0.02em' }}>TaskPie</h1>
-            <span
-              style={{
-                fontSize: '0.65rem',
-                fontWeight: 700,
-                background: 'rgba(99, 102, 241, 0.2)',
-                color: 'var(--accent-primary)',
-                padding: '2px 6px',
-                borderRadius: '6px'
-              }}
-            >
-              DESKTOP
-            </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div
+            style={{
+              width: '42px',
+              height: '42px',
+              borderRadius: '12px',
+              background: 'var(--gradient-brand)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: 'var(--shadow-glow)'
+            }}
+          >
+            <PieIcon size={24} color="#ffffff" />
           </div>
-          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Gestión visual de foco</p>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h1 style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '-0.02em' }}>TaskPie</h1>
+              <span
+                style={{
+                  fontSize: '0.65rem',
+                  fontWeight: 700,
+                  background: 'rgba(99, 102, 241, 0.2)',
+                  color: 'var(--accent-primary)',
+                  padding: '2px 6px',
+                  borderRadius: '6px'
+                }}
+              >
+                WEB
+              </span>
+            </div>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Gestión visual de foco</p>
+          </div>
         </div>
+
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="btn-ghost btn-icon mobile-close-btn"
+            title="Cerrar menú"
+          >
+            <X size={20} />
+          </button>
+        )}
       </div>
 
       {/* Main Navigation */}
@@ -132,7 +153,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenFolderModal, onOpenShort
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  if (onClose && window.innerWidth <= 900) onClose();
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -203,7 +227,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenFolderModal, onOpenShort
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
           {/* Todas las carpetas */}
           <button
-            onClick={() => setSelectedFolderId(null)}
+            onClick={() => {
+              setSelectedFolderId(null);
+              if (onClose && window.innerWidth <= 900) onClose();
+            }}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -244,7 +271,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenFolderModal, onOpenShort
                 }}
               >
                 <button
-                  onClick={() => setSelectedFolderId(folder.id)}
+                  onClick={() => {
+                    setSelectedFolderId(folder.id);
+                    if (onClose && window.innerWidth <= 900) onClose();
+                  }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',

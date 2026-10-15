@@ -34,33 +34,16 @@ export const SessionSummaryModal: React.FC = () => {
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 110,
-        background: 'rgba(9, 13, 22, 0.85)',
-        backdropFilter: 'blur(16px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
-        animation: 'fadeIn 0.2s ease'
-      }}
-    >
+    <div className="modal-overlay" style={{ zIndex: 110 }}>
       <div
-        className="glass-panel"
+        className="glass-panel modal-container animate-scale-up"
         style={{
-          width: '100%',
           maxWidth: '620px',
-          padding: '32px',
-          borderRadius: 'var(--radius-xl)',
+          padding: 'clamp(18px, 4vw, 32px)',
           border: '1px solid var(--border-medium)',
           boxShadow: 'var(--shadow-lg), 0 0 40px rgba(16, 185, 129, 0.2)',
-          display: 'flex',
-          flexDirection: 'column',
           gap: '24px',
-          animation: 'scaleUp 0.25s ease'
+          overflowY: 'auto'
         }}
       >
         {/* Celebration Header */}
@@ -89,13 +72,7 @@ export const SessionSummaryModal: React.FC = () => {
         </div>
 
         {/* Metrics Grid */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
-            gap: '12px'
-          }}
-        >
+        <div className="summary-metrics-grid">
           <div
             style={{
               background: 'var(--bg-tertiary)',

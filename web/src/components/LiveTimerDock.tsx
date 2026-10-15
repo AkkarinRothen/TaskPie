@@ -43,31 +43,10 @@ export const LiveTimerDock: React.FC = () => {
   const isWaitingManual = timerState.status === 'WAITING_MANUAL_ADVANCE';
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        bottom: '20px',
-        left: 'calc(280px + (100vw - 280px) / 2)',
-        transform: 'translateX(-50%)',
-        width: 'min(90%, 820px)',
-        zIndex: 50,
-        background: 'var(--bg-dock)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        border: '1px solid var(--border-medium)',
-        borderRadius: 'var(--radius-xl)',
-        boxShadow: 'var(--shadow-lg), var(--shadow-glow)',
-        padding: '12px 24px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '20px',
-        animation: 'fadeIn 0.3s ease'
-      }}
-    >
+    <div className="live-timer-dock">
       {/* Left: Mini Donut & Current Stage info */}
       <div
-        style={{ display: 'flex', alignItems: 'center', gap: '16px', cursor: 'pointer', flex: 1, minWidth: 0 }}
+        style={{ display: 'flex', alignItems: 'center', gap: '14px', cursor: 'pointer', flex: 1, minWidth: 0 }}
         onClick={() => setIsSessionModalOpen(true)}
       >
         <div style={{ flexShrink: 0 }}>
@@ -145,6 +124,7 @@ export const LiveTimerDock: React.FC = () => {
       {/* Center: Digits countdown */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         <div
+          className="dock-digits"
           style={{
             fontFamily: 'var(--font-mono)',
             fontSize: '1.75rem',
@@ -185,7 +165,7 @@ export const LiveTimerDock: React.FC = () => {
         {/* Voice & Sound toggles */}
         <button
           onClick={toggleVoice}
-          className="btn-ghost btn-sm btn-icon"
+          className="btn-ghost btn-sm btn-icon dock-hide-mobile"
           title={timerState.isVoiceEnabled ? 'Desactivar voz (M)' : 'Activar voz (M)'}
           style={{ color: timerState.isVoiceEnabled ? 'var(--accent-primary)' : 'var(--text-muted)' }}
         >
@@ -194,7 +174,7 @@ export const LiveTimerDock: React.FC = () => {
 
         <button
           onClick={toggleSound}
-          className="btn-ghost btn-sm btn-icon"
+          className="btn-ghost btn-sm btn-icon dock-hide-mobile"
           title={timerState.isSoundEnabled ? 'Silenciar alertas' : 'Activar alertas'}
           style={{ color: timerState.isSoundEnabled ? 'var(--accent-primary)' : 'var(--text-muted)' }}
         >
@@ -244,7 +224,7 @@ export const LiveTimerDock: React.FC = () => {
               stopSession();
             }
           }}
-          className="btn btn-ghost btn-icon"
+          className="btn btn-ghost btn-icon dock-hide-mobile"
           title="Detener sesión"
           style={{ color: 'var(--accent-coral)' }}
         >
@@ -254,7 +234,7 @@ export const LiveTimerDock: React.FC = () => {
         {isPipSupported && (
           <button
             onClick={togglePip}
-            className={`btn ${isPipActive ? 'btn-primary' : 'btn-secondary'} ${isPipActive ? '' : 'btn-icon'}`}
+            className={`btn ${isPipActive ? 'btn-primary' : 'btn-secondary'} ${isPipActive ? '' : 'btn-icon'} dock-hide-mobile`}
             title={isPipActive ? 'Cerrar ventana flotante (P)' : 'Ventana flotante / PiP (P)'}
             style={{
               marginLeft: '4px',

@@ -14,7 +14,7 @@ import { RoutineEditorModal } from './components/RoutineEditorModal';
 import { ProjectEditorModal } from './components/ProjectEditorModal';
 import { FolderEditorModal } from './components/FolderEditorModal';
 import { ShortcutsModal } from './components/ShortcutsModal';
-import { Search, Plus } from 'lucide-react';
+import { Search, Plus, Menu } from 'lucide-react';
 import type { ActivityItem, ProjectItem, RoutineItem } from './types/models';
 
 const MainDashboard: React.FC = () => {
@@ -35,6 +35,7 @@ const MainDashboard: React.FC = () => {
   const [editingProject, setEditingProject] = useState<ProjectItem | null | undefined>(undefined);
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
   const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // Filter activities by folder and query
   const selectedFolder = folders.find((f) => f.id === selectedFolderId);
@@ -67,26 +68,76 @@ const MainDashboard: React.FC = () => {
 
   return (
     <div className="app-container">
-      {/* Responsive Desktop Sidebar */}
+      {/* Backdrop overlay for mobile sidebar */}
+      {isMobileSidebarOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setIsMobileSidebarOpen(false)}
+        />
+      )}
+
+      {/* Responsive Desktop / Mobile Drawer Sidebar */}
       <Sidebar
+        isOpen={isMobileSidebarOpen}
+        onClose={() => setIsMobileSidebarOpen(false)}
         onOpenFolderModal={() => setIsFolderModalOpen(true)}
         onOpenShortcutsModal={() => setIsShortcutsModalOpen(true)}
       />
 
       {/* Main Content Area */}
       <main className="app-main">
-        <div className="main-content">
-          {/* Top Header & Search Bar */}
-          <div
+        {/* Mobile Navigation Header */}
+        <header className="mobile-app-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button
+              onClick={() => setIsMobileSidebarOpen(true)}
+              className="btn-ghost btn-icon"
+              aria-label="Abrir menú de navegación"
+            >
+              <Menu size={22} />
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div
+                style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '8px',
+                  background: 'var(--gradient-brand)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <span style={{ fontSize: '13px' }}>🥧</span>
+              </div>
+              <span style={{ fontWeight: 800, fontSize: '1.15rem', letterSpacing: '-0.02em' }}>TaskPie</span>
+            </div>
+          </div>
+
+          <span
+            className="badge"
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '20px',
-              marginBottom: '32px'
+              background: 'rgba(99, 102, 241, 0.15)',
+              color: 'var(--accent-primary)',
+              fontSize: '0.74rem'
             }}
           >
-            <div>
+            {activeTab === 'ACTIVITIES'
+              ? selectedFolder
+                ? selectedFolder.name
+                : 'Actividades'
+              : activeTab === 'ROUTINES'
+              ? 'Rutinas'
+              : activeTab === 'PROJECTS'
+              ? 'Proyectos'
+              : 'Historial'}
+          </span>
+        </header>
+
+        <div className="main-content">
+          {/* Top Header & Search Bar */}
+          <div className="dashboard-header">
+            <div className="dashboard-title-area">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <h2 style={{ fontSize: '1.9rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                   {activeTab === 'ACTIVITIES'
@@ -112,9 +163,9 @@ const MainDashboard: React.FC = () => {
             </div>
 
             {/* Actions & Search */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div className="dashboard-actions">
               {activeTab !== 'HISTORY' && (
-                <div style={{ position: 'relative', width: '260px' }}>
+                <div className="dashboard-search-box">
                   <Search
                     size={16}
                     color="var(--text-muted)"
@@ -134,7 +185,7 @@ const MainDashboard: React.FC = () => {
                 <button
                   onClick={() => setEditingActivity(null)}
                   className="btn btn-primary"
-                  style={{ height: '42px', gap: '8px' }}
+                  style={{ height: '42px', gap: '8px', flexShrink: 0 }}
                 >
                   <Plus size={18} />
                   <span>Nueva Actividad</span>
@@ -145,7 +196,7 @@ const MainDashboard: React.FC = () => {
                 <button
                   onClick={() => setEditingRoutine(null)}
                   className="btn btn-primary"
-                  style={{ height: '42px', gap: '8px' }}
+                  style={{ height: '42px', gap: '8px', flexShrink: 0 }}
                 >
                   <Plus size={18} />
                   <span>Nueva Rutina</span>
@@ -156,7 +207,7 @@ const MainDashboard: React.FC = () => {
                 <button
                   onClick={() => setEditingProject(null)}
                   className="btn btn-primary"
-                  style={{ height: '42px', gap: '8px' }}
+                  style={{ height: '42px', gap: '8px', flexShrink: 0 }}
                 >
                   <Plus size={18} />
                   <span>Nuevo Proyecto</span>
@@ -176,13 +227,7 @@ const MainDashboard: React.FC = () => {
                   No se encontraron actividades con los filtros actuales.
                 </div>
               ) : (
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
-                    gap: '20px'
-                  }}
-                >
+                <div className="responsive-cards-grid">
                   {filteredActivities.map((activity) => (
                     <ActivityCard
                       key={activity.id}
@@ -205,13 +250,7 @@ const MainDashboard: React.FC = () => {
                   No se encontraron rutinas. Crea tu primera secuencia con el botón superior.
                 </div>
               ) : (
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
-                    gap: '20px'
-                  }}
-                >
+                <div className="responsive-cards-grid">
                   {filteredRoutines.map((routine) => (
                     <RoutineCard
                       key={routine.id}
@@ -234,13 +273,7 @@ const MainDashboard: React.FC = () => {
                   No se encontraron proyectos. Crea uno nuevo para agrupar tus tareas.
                 </div>
               ) : (
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
-                    gap: '20px'
-                  }}
-                >
+                <div className="responsive-cards-grid">
                   {filteredProjects.map((project) => (
                     <ProjectCard
                       key={project.id}
