@@ -178,4 +178,16 @@ class TaskPieViewModel(application: Application) : AndroidViewModel(application)
     fun stopSession() {
         TimerController.stopSession(getApplication())
     }
+
+    fun toggleMateMode() {
+        TimerController.toggleMateMode()
+    }
+
+    fun setMateInterval(minutes: Int) {
+        TimerController.setMateInterval(minutes)
+    }
+
+    fun resetMateCountdown() {
+        TimerController.resetMateCountdown()
+    }
 }

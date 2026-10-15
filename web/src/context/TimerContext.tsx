@@ -30,6 +30,9 @@ interface TimerContextValue {
   stopSession: () => void;
   toggleVoice: () => void;
   toggleSound: () => void;
+  toggleMateMode: () => void;
+  setMateInterval: (minutes: number) => void;
+  resetMateCountdown: () => void;
   closeCompletedSummary: () => void;
   isSessionModalOpen: boolean;
   setIsSessionModalOpen: (open: boolean) => void;
@@ -55,7 +58,11 @@ const initialTimerState: TimerState = {
   records: [],
   completedSummary: null,
   isVoiceEnabled: localStorage.getItem('taskpie_voice') !== 'false',
-  isSoundEnabled: localStorage.getItem('taskpie_sound') !== 'false'
+  isSoundEnabled: localStorage.getItem('taskpie_sound') !== 'false',
+  isMateModeEnabled: localStorage.getItem('taskpie_mate_enabled') === 'true',
+  mateIntervalMinutes: parseInt(localStorage.getItem('taskpie_mate_interval') || '8', 10),
+  mateRemainingSeconds: parseInt(localStorage.getItem('taskpie_mate_interval') || '8', 10) * 60,
+  lastMateAlertTime: 0
 };
 
 const TimerContext = createContext<TimerContextValue | null>(null);
@@ -153,6 +160,28 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     workerRef.current?.postMessage({ command: cmd });
   };
 
+  const MATE_PHRASES = [
+    '¡Che, tomate el mate que se enfría!',
+    '¡Momento de mate!',
+    '¡Cuidado que se te enfría el mate!',
+    '¡Cebate otro para seguir!',
+    '¡Pausa para un matecito!'
+  ];
+
+  const triggerMateAlert = () => {
+    const current = stateRef.current;
+    if (current.isSoundEnabled) {
+      AudioService.playTick();
+    }
+    if (current.isVoiceEnabled) {
+      const phrase = MATE_PHRASES[Math.floor(Math.random() * MATE_PHRASES.length)];
+      SpeechService.speak(phrase);
+    }
+    NotificationService.notify('🧉 ¡Momento de mate!', {
+      body: '¡Que no se te enfríe! Tomate un matecito antes de seguir.'
+    });
+  };
+
   const handleTick = () => {
     const current = stateRef.current;
     if (current.status !== 'RUNNING') return;
@@ -160,6 +189,18 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const remaining = current.remainingSeconds - 1;
     const elapsedStage = current.elapsedSecondsInCurrentStage + 1;
     const totalElapsed = current.totalElapsedSecondsSession + 1;
+
+    let newMateRemaining = current.mateRemainingSeconds;
+    let newLastMateAlertTime = current.lastMateAlertTime;
+
+    if (current.isMateModeEnabled) {
+      newMateRemaining -= 1;
+      if (newMateRemaining <= 0) {
+        triggerMateAlert();
+        newMateRemaining = current.mateIntervalMinutes * 60;
+        newLastMateAlertTime = Date.now();
+      }
+    }
 
     const currentStep = current.routineSteps[current.currentActivityIndex];
     const currentStage = currentStep?.stages[current.currentStageIndex];
@@ -180,7 +221,9 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setState((prev) => ({
           ...prev,
           records: [...prev.records, record],
-          totalElapsedSecondsSession: totalElapsed
+          totalElapsedSecondsSession: totalElapsed,
+          mateRemainingSeconds: newMateRemaining,
+          lastMateAlertTime: newLastMateAlertTime
         }));
       }
 
@@ -195,7 +238,9 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         ...prev,
         remainingSeconds: remaining,
         elapsedSecondsInCurrentStage: elapsedStage,
-        totalElapsedSecondsSession: totalElapsed
+        totalElapsedSecondsSession: totalElapsed,
+        mateRemainingSeconds: newMateRemaining,
+        lastMateAlertTime: newLastMateAlertTime
       }));
 
       // Verificación de anuncios por voz y alertas acústicas
@@ -387,7 +432,9 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       totalElapsedSecondsSession: 0,
       totalPlannedSecondsSession: totalPlanned,
       records: [],
-      completedSummary: null
+      completedSummary: null,
+      mateRemainingSeconds: stateRef.current.mateIntervalMinutes * 60,
+      lastMateAlertTime: 0
     };
 
     setState(newState);
@@ -608,6 +655,37 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setState((prev) => ({ ...prev, isSoundEnabled: next }));
   };
 
+  const toggleMateMode = () => {
+    const next = !stateRef.current.isMateModeEnabled;
+    localStorage.setItem('taskpie_mate_enabled', String(next));
+    const interval = stateRef.current.mateIntervalMinutes;
+    setState((prev) => ({
+      ...prev,
+      isMateModeEnabled: next,
+      mateRemainingSeconds: next && prev.mateRemainingSeconds <= 0 ? interval * 60 : prev.mateRemainingSeconds
+    }));
+    if (next && stateRef.current.isVoiceEnabled) {
+      SpeechService.speak(`Compañero de mate activado, cada ${interval} minutos`);
+    }
+  };
+
+  const setMateInterval = (minutes: number) => {
+    const clamped = Math.max(1, Math.min(60, minutes));
+    localStorage.setItem('taskpie_mate_interval', String(clamped));
+    setState((prev) => ({
+      ...prev,
+      mateIntervalMinutes: clamped,
+      mateRemainingSeconds: clamped * 60
+    }));
+  };
+
+  const resetMateCountdown = () => {
+    setState((prev) => ({
+      ...prev,
+      mateRemainingSeconds: prev.mateIntervalMinutes * 60
+    }));
+  };
+
   const closeCompletedSummary = () => {
     setState((prev) => ({ ...prev, status: 'IDLE', completedSummary: null }));
     setIsSessionModalOpen(false);
@@ -627,6 +705,9 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         stopSession,
         toggleVoice,
         toggleSound,
+        toggleMateMode,
+        setMateInterval,
+        resetMateCountdown,
         closeCompletedSummary,
         isSessionModalOpen,
         setIsSessionModalOpen,

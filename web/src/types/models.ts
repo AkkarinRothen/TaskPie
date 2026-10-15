@@ -189,6 +189,10 @@ export interface TimerState {
   completedSummary: SessionSummary | null;
   isVoiceEnabled: boolean;
   isSoundEnabled: boolean;
+  isMateModeEnabled: boolean;
+  mateIntervalMinutes: number;
+  mateRemainingSeconds: number;
+  lastMateAlertTime: number;
 }
 
 export interface BackupData {

@@ -27,7 +27,11 @@ data class TimerState(
     val totalPlannedSecondsSession: Long = 0,
     val records: List<StageExecutionRecord> = emptyList(),
     val completedSummary: SessionSummary? = null,
-    val isVoiceEnabled: Boolean = true
+    val isVoiceEnabled: Boolean = true,
+    val isMateModeEnabled: Boolean = false,
+    val mateIntervalMinutes: Int = 8,
+    val mateRemainingSeconds: Long = 8 * 60L,
+    val lastMateAlertTimeMillis: Long = 0L
 ) {
     val currentActivity: RoutineStep?
         get() = routineSteps.getOrNull(currentActivityIndex)
@@ -72,5 +76,11 @@ data class TimerState(
         } else {
             String.format("%02d:%02d", mins, secs)
         }
+    }
+
+    fun formattedMateRemainingTime(): String {
+        val mins = mateRemainingSeconds / 60
+        val secs = mateRemainingSeconds % 60
+        return String.format("%02d:%02d", mins, secs)
     }
 }

@@ -157,6 +157,27 @@ export const LiveTimerDock: React.FC = () => {
         >
           {isWaitingManual ? '00:00' : formatTime(timerState.remainingSeconds)}
         </div>
+
+        {timerState.isMateModeEnabled && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '3px 8px',
+              borderRadius: '12px',
+              background: 'rgba(16, 185, 129, 0.15)',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+              color: '#34d399',
+              fontSize: '0.75rem',
+              fontWeight: 700
+            }}
+            title="Compañero de Mate activo"
+          >
+            <span>🧉</span>
+            <span>{formatTime(timerState.mateRemainingSeconds)}</span>
+          </div>
+        )}
       </div>
 
       {/* Right: Controls */}

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Play,
   Pause,
@@ -25,12 +25,17 @@ export const ActiveSessionModal: React.FC = () => {
     stopSession,
     toggleVoice,
     toggleSound,
+    toggleMateMode,
+    setMateInterval,
+    resetMateCountdown,
     isSessionModalOpen,
     setIsSessionModalOpen,
     isPipActive,
     isPipSupported,
     togglePip
   } = useTimer();
+
+  const [showMateMenu, setShowMateMenu] = useState(false);
 
   if (!isSessionModalOpen || timerState.status === 'IDLE') return null;
 
@@ -125,6 +130,99 @@ export const ActiveSessionModal: React.FC = () => {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* Mate Companion Button & Popover */}
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => setShowMateMenu(!showMateMenu)}
+              className={`btn btn-sm ${timerState.isMateModeEnabled ? 'btn-primary' : 'btn-secondary'}`}
+              style={{
+                background: timerState.isMateModeEnabled ? 'rgba(16, 185, 129, 0.2)' : undefined,
+                borderColor: timerState.isMateModeEnabled ? '#10b981' : undefined,
+                color: timerState.isMateModeEnabled ? '#34d399' : 'var(--text-muted)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+              title="Modo Compañero de Mate"
+            >
+              <span>🧉</span>
+              <span>{timerState.isMateModeEnabled ? `Mate (${timerState.mateIntervalMinutes}m)` : 'Mate OFF'}</span>
+            </button>
+
+            {showMateMenu && (
+              <div
+                className="glass-panel"
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  right: 0,
+                  zIndex: 120,
+                  width: '240px',
+                  padding: '14px',
+                  borderRadius: 'var(--radius-lg)',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-medium)',
+                  boxShadow: 'var(--shadow-xl)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid var(--border-subtle)' }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>🧉</span> Modo Mate
+                  </div>
+                  <button
+                    onClick={() => {
+                      toggleMateMode();
+                      setShowMateMenu(false);
+                    }}
+                    className={`btn btn-xs ${timerState.isMateModeEnabled ? 'btn-danger' : 'btn-primary'}`}
+                    style={{ fontSize: '0.72rem' }}
+                  >
+                    {timerState.isMateModeEnabled ? 'Desactivar' : 'Activar'}
+                  </button>
+                </div>
+
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Frecuencia de aviso
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
+                  {[5, 8, 10, 15].map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => {
+                        setMateInterval(m);
+                        if (!timerState.isMateModeEnabled) toggleMateMode();
+                      }}
+                      className={`btn btn-xs ${timerState.mateIntervalMinutes === m ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{
+                        padding: '4px 0',
+                        fontSize: '0.75rem',
+                        fontWeight: timerState.mateIntervalMinutes === m ? 700 : 500
+                      }}
+                    >
+                      {m}m
+                    </button>
+                  ))}
+                </div>
+
+                {timerState.isMateModeEnabled && (
+                  <button
+                    onClick={() => {
+                      resetMateCountdown();
+                      setShowMateMenu(false);
+                    }}
+                    className="btn btn-secondary btn-xs"
+                    style={{ marginTop: '2px', justifyContent: 'center', color: '#34d399', borderColor: 'rgba(16, 185, 129, 0.4)' }}
+                  >
+                    Reiniciar contador (Cebé uno)
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
           <button
             onClick={toggleVoice}
             className="btn btn-secondary btn-sm"
@@ -184,9 +282,47 @@ export const ActiveSessionModal: React.FC = () => {
           maxWidth: '1100px',
           margin: '0 auto',
           width: '100%',
-          gap: '32px'
+          gap: '24px'
         }}
       >
+        {/* Mate Alert Banner (when recently triggered within 12s) */}
+        {timerState.isMateModeEnabled && Date.now() - timerState.lastMateAlertTime < 12000 && (
+          <div
+            className="glass-panel"
+            style={{
+              maxWidth: '680px',
+              width: '100%',
+              padding: '12px 20px',
+              borderRadius: 'var(--radius-lg)',
+              background: 'rgba(16, 185, 129, 0.15)',
+              border: '1px solid rgba(16, 185, 129, 0.45)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              animation: 'fadeIn 0.25s ease'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <span style={{ fontSize: '1.8rem' }}>🧉</span>
+              <div>
+                <div style={{ fontWeight: 800, color: '#34d399', fontSize: '0.95rem' }}>
+                  ¡Momento de mate!
+                </div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                  Que no se te enfríe. Tomate un matecito antes de seguir enfocado.
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={resetMateCountdown}
+              className="btn btn-sm"
+              style={{ background: '#10b981', color: '#fff', fontWeight: 700 }}
+            >
+              Cebado
+            </button>
+          </div>
+        )}
+
         {/* Giant Donut Pie Chart Center */}
         <div style={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
           {currentStep && (
@@ -238,6 +374,45 @@ export const ActiveSessionModal: React.FC = () => {
             />
           )}
         </div>
+
+        {/* Mate Companion Widget Pill if enabled */}
+        {timerState.isMateModeEnabled && (
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '12px',
+              padding: '6px 16px',
+              borderRadius: '20px',
+              background: 'rgba(16, 185, 129, 0.12)',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+              marginTop: '-10px',
+              marginBottom: '-6px'
+            }}
+          >
+            <span style={{ fontSize: '1rem' }}>🧉</span>
+            <span style={{ fontSize: '0.84rem', fontWeight: 700, color: '#34d399' }}>
+              Mate en {formatTime(timerState.mateRemainingSeconds)}
+            </span>
+            <button
+              onClick={resetMateCountdown}
+              className="btn-ghost"
+              style={{
+                padding: '3px 10px',
+                borderRadius: '12px',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                color: '#6ee7b7',
+                background: 'rgba(16, 185, 129, 0.25)',
+                border: 'none',
+                cursor: 'pointer'
+              }}
+              title="Reiniciar contador de mate si te acabas de cebar uno"
+            >
+              Cebé uno
+            </button>
+          </div>
+        )}
 
         {/* Current Stage Information Card */}
         <div

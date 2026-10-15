@@ -115,6 +115,24 @@ export const PipFloatingTimer: React.FC<PipFloatingTimerProps> = ({
           </span>
         </div>
 
+        {/* Small Status Badge for Mate */}
+        {timerState.isMateModeEnabled && (
+          <span
+            style={{
+              fontSize: '0.65rem',
+              fontWeight: 700,
+              padding: '2px 5px',
+              borderRadius: '4px',
+              background: 'rgba(16, 185, 129, 0.2)',
+              color: '#34d399',
+              border: '1px solid rgba(16, 185, 129, 0.4)'
+            }}
+            title="Modo Mate Activo"
+          >
+            🧉 {formatTime(timerState.mateRemainingSeconds)}
+          </span>
+        )}
+
         {/* Small Status Badge if Paused or Waiting */}
         {isPaused && (
           <span

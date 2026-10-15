@@ -38,6 +38,16 @@ object TimerController {
 
     private const val PREFS_NAME = "taskpie_settings"
     private const val PREF_VOICE_ENABLED = "voice_announcements_enabled"
+    private const val PREF_MATE_ENABLED = "mate_reminder_enabled"
+    private const val PREF_MATE_INTERVAL = "mate_interval_minutes"
+
+    private val matePhrases = listOf(
+        "¡Che, tomate el mate que se enfría!",
+        "¡Momento de mate!",
+        "¡Cuidado que se te enfría el mate!",
+        "¡Cebate otro para seguir!",
+        "¡Pausa para un matecito!"
+    )
 
     fun getVoiceEnabledPreference(context: Context): Boolean {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -47,6 +57,60 @@ object TimerController {
     fun setVoiceEnabledPreference(context: Context, enabled: Boolean) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putBoolean(PREF_VOICE_ENABLED, enabled).apply()
+    }
+
+    fun getMateEnabledPreference(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(PREF_MATE_ENABLED, false)
+    }
+
+    fun setMateEnabledPreference(context: Context, enabled: Boolean) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(PREF_MATE_ENABLED, enabled).apply()
+    }
+
+    fun getMateIntervalPreference(context: Context): Int {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getInt(PREF_MATE_INTERVAL, 8)
+    }
+
+    fun setMateIntervalPreference(context: Context, minutes: Int) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putInt(PREF_MATE_INTERVAL, minutes).apply()
+    }
+
+    fun toggleMateMode() {
+        val current = _timerState.value
+        val newEnabled = !current.isMateModeEnabled
+        val interval = current.mateIntervalMinutes
+        _timerState.update {
+            it.copy(
+                isMateModeEnabled = newEnabled,
+                mateRemainingSeconds = if (newEnabled && it.mateRemainingSeconds <= 0) interval * 60L else it.mateRemainingSeconds
+            )
+        }
+        appContext?.let { setMateEnabledPreference(it, newEnabled) }
+        if (newEnabled && current.isVoiceEnabled) {
+            voiceManager?.speak("Compañero de mate activado, cada $interval minutos")
+        }
+    }
+
+    fun setMateInterval(minutes: Int) {
+        val clamped = minutes.coerceIn(1, 60)
+        _timerState.update {
+            it.copy(
+                mateIntervalMinutes = clamped,
+                mateRemainingSeconds = clamped * 60L
+            )
+        }
+        appContext?.let { setMateIntervalPreference(it, clamped) }
+    }
+
+    fun resetMateCountdown() {
+        val interval = _timerState.value.mateIntervalMinutes
+        _timerState.update {
+            it.copy(mateRemainingSeconds = interval * 60L)
+        }
     }
 
     fun toggleVoice() {
@@ -64,7 +128,16 @@ object TimerController {
             voiceManager = VoiceAnnouncementManager(context.applicationContext)
         }
         val defaultVoice = getVoiceEnabledPreference(context)
-        _timerState.update { it.copy(isVoiceEnabled = defaultVoice) }
+        val defaultMateEnabled = getMateEnabledPreference(context)
+        val defaultMateInterval = getMateIntervalPreference(context)
+        _timerState.update {
+            it.copy(
+                isVoiceEnabled = defaultVoice,
+                isMateModeEnabled = defaultMateEnabled,
+                mateIntervalMinutes = defaultMateInterval,
+                mateRemainingSeconds = defaultMateInterval * 60L
+            )
+        }
         repositoryScope = (context.applicationContext as? TaskPieApplication)?.let {
             CoroutineScope(SupervisorJob() + Dispatchers.IO)
         }
@@ -195,6 +268,9 @@ object TimerController {
         val firstStep = steps[0]
         val firstStage = firstStep.stages.firstOrNull() ?: return
 
+        val defaultMateEnabled = getMateEnabledPreference(context)
+        val defaultMateInterval = getMateIntervalPreference(context)
+
         _timerState.value = TimerState(
             status = TimerStatus.RUNNING,
             sessionTitle = title,
@@ -209,7 +285,10 @@ object TimerController {
             totalPlannedSecondsSession = totalPlannedSeconds,
             records = emptyList(),
             completedSummary = null,
-            isVoiceEnabled = isVoice
+            isVoiceEnabled = isVoice,
+            isMateModeEnabled = defaultMateEnabled,
+            mateIntervalMinutes = defaultMateInterval,
+            mateRemainingSeconds = defaultMateInterval * 60L
         )
 
         if (isVoice) {
@@ -318,6 +397,18 @@ object TimerController {
         val elapsedStage = currentState.elapsedSecondsInCurrentStage + 1
         val totalElapsed = currentState.totalElapsedSecondsSession + 1
 
+        var newMateRemaining = currentState.mateRemainingSeconds
+        var newLastMateAlertTime = currentState.lastMateAlertTimeMillis
+
+        if (currentState.isMateModeEnabled) {
+            newMateRemaining -= 1
+            if (newMateRemaining <= 0) {
+                triggerMateAlert()
+                newMateRemaining = currentState.mateIntervalMinutes * 60L
+                newLastMateAlertTime = System.currentTimeMillis()
+            }
+        }
+
         if (remaining <= 0) {
             // Stage completed!
             val currentStage = currentState.currentStage
@@ -335,7 +426,9 @@ object TimerController {
                 _timerState.update {
                     it.copy(
                         records = it.records + record,
-                        totalElapsedSecondsSession = totalElapsed
+                        totalElapsedSecondsSession = totalElapsed,
+                        mateRemainingSeconds = newMateRemaining,
+                        lastMateAlertTimeMillis = newLastMateAlertTime
                     )
                 }
             }
@@ -347,7 +440,9 @@ object TimerController {
                 it.copy(
                     remainingSeconds = remaining,
                     elapsedSecondsInCurrentStage = elapsedStage,
-                    totalElapsedSecondsSession = totalElapsed
+                    totalElapsedSecondsSession = totalElapsed,
+                    mateRemainingSeconds = newMateRemaining,
+                    lastMateAlertTimeMillis = newLastMateAlertTime
                 )
             }
             checkVoiceAnnouncements(currentState.currentStage, remaining)
@@ -504,6 +599,44 @@ object TimerController {
                 }
             }
             stopForegroundService(ctx)
+        }
+    }
+
+    private fun triggerMateAlert() {
+        appContext?.let { ctx ->
+            // Subtle distinctive vibration for mate (2 short pulses)
+            try {
+                val pattern = longArrayOf(0, 160, 120, 160)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val vibratorManager = ctx.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                    vibratorManager?.defaultVibrator?.vibrate(VibrationEffect.createWaveform(pattern, -1))
+                } else {
+                    @Suppress("DEPRECATION")
+                    val vibrator = ctx.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        vibrator?.vibrate(VibrationEffect.createWaveform(pattern, -1))
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator?.vibrate(pattern, -1)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            // Subtle notification tone
+            try {
+                val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80)
+                toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 250)
+            } catch (t: Exception) {
+                t.printStackTrace()
+            }
+        }
+
+        // Voice announcement if voice is enabled
+        if (_timerState.value.isVoiceEnabled) {
+            val phrase = matePhrases.random()
+            voiceManager?.speak(phrase)
         }
     }
 

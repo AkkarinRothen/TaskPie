@@ -1,7 +1,9 @@
 package com.taskpie.app.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -38,6 +40,7 @@ fun ActiveSessionScreen(
 ) {
     val timerState by viewModel.timerState.collectAsState()
     var showStopConfirmation by remember { mutableStateOf(false) }
+    var showMateMenu by remember { mutableStateOf(false) }
 
     var keepScreenOnEnabled by remember { mutableStateOf(true) }
     if (keepScreenOnEnabled && (timerState.status == TimerStatus.RUNNING || timerState.status == TimerStatus.PAUSED)) {
@@ -82,6 +85,97 @@ fun ActiveSessionScreen(
                     }
                 },
                 actions = {
+                    Box {
+                        IconButton(
+                            onClick = { showMateMenu = true },
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(if (timerState.isMateModeEnabled) AccentEmeraldLight else Color.Transparent)
+                        ) {
+                            Text(
+                                text = "🧉",
+                                fontSize = 18.sp
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showMateMenu,
+                            onDismissRequest = { showMateMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = if (timerState.isMateModeEnabled) "Desactivar Modo Mate" else "Activar Modo Mate",
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                },
+                                onClick = {
+                                    viewModel.toggleMateMode()
+                                    showMateMenu = false
+                                },
+                                leadingIcon = {
+                                    Text("🧉", fontSize = 16.sp)
+                                }
+                            )
+
+                            HorizontalDivider()
+
+                            Text(
+                                text = "FRECUENCIA DEL MATE",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = LightTextSecondary
+                                ),
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                            )
+
+                            listOf(5, 8, 10, 15).forEach { mins ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("Cada $mins min")
+                                            if (timerState.mateIntervalMinutes == mins) {
+                                                Icon(
+                                                    Icons.Default.Check,
+                                                    contentDescription = null,
+                                                    tint = AccentEmerald,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onClick = {
+                                        viewModel.setMateInterval(mins)
+                                        if (!timerState.isMateModeEnabled) {
+                                            viewModel.toggleMateMode()
+                                        }
+                                        showMateMenu = false
+                                    }
+                                )
+                            }
+
+                            if (timerState.isMateModeEnabled) {
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = {
+                                        Text("Reiniciar contador (Cebé uno)", color = AccentEmerald, fontWeight = FontWeight.Medium)
+                                    },
+                                    onClick = {
+                                        viewModel.resetMateCountdown()
+                                        showMateMenu = false
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Refresh, contentDescription = null, tint = AccentEmerald, modifier = Modifier.size(16.dp))
+                                    }
+                                )
+                            }
+                        }
+                    }
                     IconButton(onClick = { viewModel.toggleVoice() }) {
                         Icon(
                             imageVector = if (timerState.isVoiceEnabled) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
@@ -249,12 +343,103 @@ fun ActiveSessionScreen(
                         }
                     }
 
+                    // Mate Alert Banner (when recently triggered within 12 seconds)
+                    val timeSinceLastMateAlert = System.currentTimeMillis() - timerState.lastMateAlertTimeMillis
+                    val showMateAlertBanner = timerState.isMateModeEnabled && timeSinceLastMateAlert in 0L..12_000L
+
+                    AnimatedVisibility(visible = showMateAlertBanner) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 16.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = AccentEmeraldLight),
+                            border = BorderStroke(1.dp, AccentEmerald.copy(alpha = 0.5f))
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("🧉", fontSize = 28.sp)
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "¡Momento de mate!",
+                                        style = MaterialTheme.typography.titleMedium.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = AccentEmerald
+                                        )
+                                    )
+                                    Text(
+                                        text = "Que no se te enfríe. Dale un trago o cebate otro para seguir enfocado.",
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontSize = 12.sp,
+                                            color = LightTextPrimary
+                                        )
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { viewModel.resetMateCountdown() },
+                                    colors = ButtonDefaults.textButtonColors(contentColor = AccentEmerald)
+                                ) {
+                                    Text("Cebado", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
                     // Big Circular Timer
                     CircularTimerView(
                         timerState = timerState,
                         size = 250.dp,
                         strokeWidth = 12.dp
                     )
+
+                    // Mate Companion Widget if enabled
+                    if (timerState.isMateModeEnabled) {
+                        Surface(
+                            modifier = Modifier
+                                .padding(top = 12.dp)
+                                .clip(RoundedCornerShape(20.dp)),
+                            color = AccentEmeraldLight,
+                            border = BorderStroke(1.dp, AccentEmerald.copy(alpha = 0.35f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("🧉", fontSize = 15.sp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Mate en ${timerState.formattedMateRemainingTime()}",
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = AccentEmerald,
+                                        fontSize = 12.sp
+                                    )
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Surface(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable { viewModel.resetMateCountdown() },
+                                    color = AccentEmerald.copy(alpha = 0.15f)
+                                ) {
+                                    Text(
+                                        text = "Cebé uno",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = AccentEmerald,
+                                            fontSize = 11.sp
+                                        ),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(20.dp))
 
