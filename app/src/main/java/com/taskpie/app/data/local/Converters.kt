@@ -57,4 +57,16 @@ class Converters {
         val type = object : TypeToken<List<StageExecutionRecord>>() {}.type
         return gson.fromJson(json, type) ?: emptyList()
     }
+
+    @TypeConverter
+    fun fromProjectRoutineList(routines: List<com.taskpie.app.model.ProjectRoutineItem>?): String {
+        return gson.toJson(routines ?: emptyList<com.taskpie.app.model.ProjectRoutineItem>())
+    }
+
+    @TypeConverter
+    fun toProjectRoutineList(json: String?): List<com.taskpie.app.model.ProjectRoutineItem> {
+        if (json.isNullOrEmpty()) return emptyList()
+        val type = object : TypeToken<List<com.taskpie.app.model.ProjectRoutineItem>>() {}.type
+        return gson.fromJson(json, type) ?: emptyList()
+    }
 }

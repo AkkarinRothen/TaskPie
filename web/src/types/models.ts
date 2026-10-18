@@ -5,6 +5,7 @@ export interface Stage {
   notes?: string;
   isOptional?: boolean;
   colorHex?: string;
+  isEnabled?: boolean; // true por defecto; si es false, se omite en la corrida y pastel
 }
 
 export interface ActivityItem {
@@ -14,6 +15,7 @@ export interface ActivityItem {
   stages: Stage[];
   isTemplate: boolean;
   category: string;
+  tags?: string[];
   createdAt: number;
 }
 
@@ -28,6 +30,8 @@ export interface RoutineStep {
   blockRepeatCount?: number;
   iterationIndex?: number;
   totalIterations?: number;
+  isCustomized?: boolean; // Indica si las etapas fueron personalizadas para esta rutina
+  originalActivityId?: string; // ID original para poder restablecer
 }
 
 export interface RoutineBlock {
@@ -93,7 +97,8 @@ export function calculateRoutineTotalSeconds(steps: RoutineStep[]): number {
   const blocks = stepsToBlocks(steps);
   return blocks.reduce((acc, b) => {
     const blockBaseSeconds = b.steps.reduce((sAcc, s) => {
-      return sAcc + s.stages.reduce((stAcc, st) => stAcc + st.durationSeconds, 0);
+      const activeStages = s.stages.filter((st) => st.isEnabled !== false);
+      return sAcc + activeStages.reduce((stAcc, st) => stAcc + st.durationSeconds, 0);
     }, 0);
     return acc + blockBaseSeconds * Math.max(1, b.repeatCount || 1);
   }, 0);
@@ -107,9 +112,14 @@ export function unrollRoutineSteps(steps: RoutineStep[]): RoutineStep[] {
     const repeats = Math.max(1, b.repeatCount || 1);
     for (let r = 0; r < repeats; r++) {
       for (const s of b.steps) {
+        // Filtrar etapas que no estén habilitadas
+        const activeStages = s.stages.filter((st) => st.isEnabled !== false);
+        if (activeStages.length === 0) continue;
+
         unrolled.push({
           ...s,
-          id: `${s.id}_iter_${r}_${Date.now()}`,
+          stages: activeStages,
+          id: `${s.id}_iter_${r}_${Date.now()}_${Math.random()}`,
           blockId: b.steps.length > 1 || repeats > 1 ? b.id : undefined,
           blockTitle: b.title.trim() ? b.title : (repeats > 1 ? 'Bloque' : undefined),
           blockRepeatCount: repeats,
@@ -129,7 +139,16 @@ export interface RoutineItem {
   description: string;
   steps: RoutineStep[];
   isTemplate: boolean;
+  tags?: string[];
   createdAt: number;
+}
+
+export interface ProjectRoutineItem {
+  id: string; // ID único de la instancia dentro del proyecto
+  routineId: string; // Referencia a la rutina original
+  title: string;
+  steps: RoutineStep[]; // Copia snapshot de los pasos/etapas para este proyecto
+  isCustomized?: boolean;
 }
 
 export interface ProjectItem {
@@ -137,7 +156,9 @@ export interface ProjectItem {
   title: string;
   description: string;
   activityIds: string[];
-  routineIds: string[];
+  routineIds: string[]; // Para compatibilidad
+  projectRoutines?: ProjectRoutineItem[]; // Rutinas desacopladas configuradas
+  tags?: string[];
   createdAt: number;
 }
 

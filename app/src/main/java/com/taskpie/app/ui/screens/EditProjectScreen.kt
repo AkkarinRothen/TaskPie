@@ -49,19 +49,40 @@ fun EditProjectScreen(
     var selectedActivityIds by remember(existingProject) {
         mutableStateOf(existingProject?.activityIds?.toSet() ?: emptySet())
     }
-    var routineSequence by remember(existingProject) {
-        mutableStateOf(existingProject?.routineIds ?: emptyList())
+    var projectRoutines by remember(existingProject, routines) {
+        mutableStateOf(
+            if (!existingProject?.projectRoutines.isNullOrEmpty()) {
+                existingProject!!.projectRoutines
+            } else if (!existingProject?.routineIds.isNullOrEmpty()) {
+                existingProject!!.routineIds.mapNotNull { rId ->
+                    val r = routines.find { it.id == rId } ?: return@mapNotNull null
+                    com.taskpie.app.model.ProjectRoutineItem(
+                        routineId = r.id,
+                        title = r.title,
+                        steps = r.steps.map { st ->
+                            st.copy(stages = st.stages.map { s -> s.copy() })
+                        },
+                        isCustomized = false
+                    )
+                }
+            } else {
+                emptyList()
+            }
+        )
     }
 
+    var expandedProjectRoutineIds by remember { mutableStateOf(setOf<String>()) }
     var isSelectingRoutineForSequence by remember { mutableStateOf(false) }
     var activityToStart by remember { mutableStateOf<ActivityItem?>(null) }
     var routineToStart by remember { mutableStateOf<RoutineItem?>(null) }
     var isStartingFullProject by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    val totalSequenceSeconds = remember(routineSequence, routines) {
-        routineSequence.sumOf { rId ->
-            routines.find { it.id == rId }?.totalDurationSeconds ?: 0L
+    val totalSequenceSeconds = remember(projectRoutines) {
+        projectRoutines.sumOf { pr ->
+            pr.steps.sumOf { st ->
+                st.stages.filter { it.isEnabled }.sumOf { it.durationSeconds }
+            }
         }
     }
     val totalSequenceMinutes = totalSequenceSeconds / 60
@@ -93,7 +114,8 @@ fun EditProjectScreen(
                                 title = title.trim(),
                                 description = description.trim(),
                                 activityIds = selectedActivityIds.toList(),
-                                routineIds = routineSequence,
+                                routineIds = projectRoutines.map { it.routineId },
+                                projectRoutines = projectRoutines,
                                 createdAt = existingProject?.createdAt ?: System.currentTimeMillis()
                             )
                             viewModel.saveProject(item)
@@ -159,7 +181,7 @@ fun EditProjectScreen(
                             modifier = Modifier.fillMaxWidth()
                         )
 
-                        if (existingProject != null && routineSequence.isNotEmpty()) {
+                        if (existingProject != null && projectRoutines.isNotEmpty()) {
                             FilledTonalButton(
                                 onClick = { isStartingFullProject = true },
                                 shape = RoundedCornerShape(10.dp),
@@ -198,7 +220,7 @@ fun EditProjectScreen(
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                         )
                         Text(
-                            text = "${routineSequence.size} rutinas ordenadas • Total: $totalSequenceMinutes min",
+                            text = "${projectRoutines.size} rutinas ordenadas • Total: $totalSequenceMinutes min",
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 fontSize = 12.sp,
                                 color = LightTextSecondary
@@ -219,7 +241,7 @@ fun EditProjectScreen(
             }
 
             // Routine Sequence Items
-            if (routineSequence.isEmpty()) {
+            if (projectRoutines.isEmpty()) {
                 item {
                     Card(
                         modifier = Modifier
@@ -247,7 +269,7 @@ fun EditProjectScreen(
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                             )
                             Text(
-                                text = "Añade una rutina. Puedes repetir la misma rutina tantas veces como desees.",
+                                text = "Añade una rutina. Puedes personalizar etapas sin afectar la rutina original.",
                                 style = MaterialTheme.typography.bodyMedium.copy(color = LightTextSecondary),
                                 modifier = Modifier.padding(top = 2.dp)
                             )
@@ -255,8 +277,16 @@ fun EditProjectScreen(
                     }
                 }
             } else {
-                itemsIndexed(routineSequence) { index, routineId ->
-                    val routine = routines.find { it.id == routineId }
+                itemsIndexed(projectRoutines) { index, projectRoutine ->
+                    val routineKey = "${projectRoutine.routineId}_$index"
+                    val isExpanded = expandedProjectRoutineIds.contains(routineKey)
+                    val activeStagesCount = projectRoutine.steps.sumOf { st -> st.stages.count { it.isEnabled } }
+                    val totalStagesCount = projectRoutine.steps.sumOf { it.stages.size }
+                    val activeDurationSeconds = projectRoutine.steps.sumOf { st ->
+                        st.stages.filter { it.isEnabled }.sumOf { it.durationSeconds }
+                    }
+                    val durationMins = activeDurationSeconds / 60
+
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp),
@@ -264,137 +294,312 @@ fun EditProjectScreen(
                         border = BorderStroke(1.dp, LightBorder),
                         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
                             Row(
+                                modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                // Reorder buttons
-                                Column {
-                                    IconButton(
-                                        onClick = {
-                                            if (index > 0) {
-                                                val list = routineSequence.toMutableList()
-                                                val item = list.removeAt(index)
-                                                list.add(index - 1, item)
-                                                routineSequence = list
-                                            }
-                                        },
-                                        enabled = index > 0,
-                                        modifier = Modifier.size(24.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.KeyboardArrowUp,
-                                            contentDescription = "Subir",
-                                            tint = if (index > 0) LightTextPrimary else LightTextTertiary,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-
-                                    IconButton(
-                                        onClick = {
-                                            if (index < routineSequence.size - 1) {
-                                                val list = routineSequence.toMutableList()
-                                                val item = list.removeAt(index)
-                                                list.add(index + 1, item)
-                                                routineSequence = list
-                                            }
-                                        },
-                                        enabled = index < routineSequence.size - 1,
-                                        modifier = Modifier.size(24.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.KeyboardArrowDown,
-                                            contentDescription = "Bajar",
-                                            tint = if (index < routineSequence.size - 1) LightTextPrimary else LightTextTertiary,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.width(8.dp))
-
-                                // Number badge
-                                Box(
-                                    modifier = Modifier
-                                        .size(28.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(AccentIndigoLight),
-                                    contentAlignment = Alignment.Center
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
                                 ) {
-                                    Text(
-                                        text = "#${index + 1}",
-                                        style = MaterialTheme.typography.labelMedium.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            color = AccentIndigo,
-                                            fontSize = 11.sp
+                                    // Reorder buttons
+                                    Column {
+                                        IconButton(
+                                            onClick = {
+                                                if (index > 0) {
+                                                    val list = projectRoutines.toMutableList()
+                                                    val item = list.removeAt(index)
+                                                    list.add(index - 1, item)
+                                                    projectRoutines = list
+                                                }
+                                            },
+                                            enabled = index > 0,
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.KeyboardArrowUp,
+                                                contentDescription = "Subir",
+                                                tint = if (index > 0) LightTextPrimary else LightTextTertiary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+
+                                        IconButton(
+                                            onClick = {
+                                                if (index < projectRoutines.size - 1) {
+                                                    val list = projectRoutines.toMutableList()
+                                                    val item = list.removeAt(index)
+                                                    list.add(index + 1, item)
+                                                    projectRoutines = list
+                                                }
+                                            },
+                                            enabled = index < projectRoutines.size - 1,
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.KeyboardArrowDown,
+                                                contentDescription = "Bajar",
+                                                tint = if (index < projectRoutines.size - 1) LightTextPrimary else LightTextTertiary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    // Number badge
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(AccentIndigoLight),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "#${index + 1}",
+                                            style = MaterialTheme.typography.labelMedium.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                color = AccentIndigo,
+                                                fontSize = 11.sp
+                                            )
                                         )
-                                    )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = projectRoutine.title,
+                                                style = MaterialTheme.typography.titleMedium.copy(
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    fontSize = 14.sp
+                                                )
+                                            )
+                                            if (projectRoutine.isCustomized) {
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = "Personalizada",
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = AccentAmber,
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(4.dp))
+                                                        .background(AccentAmber.copy(alpha = 0.15f))
+                                                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                        Text(
+                                            text = "${projectRoutine.steps.size} actividades • $durationMins min",
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                fontSize = 11.sp,
+                                                color = LightTextSecondary
+                                            )
+                                        )
+                                    }
                                 }
 
-                                Spacer(modifier = Modifier.width(10.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    // Duplicate button
+                                    IconButton(
+                                        onClick = {
+                                            val list = projectRoutines.toMutableList()
+                                            list.add(
+                                                index + 1,
+                                                projectRoutine.copy(
+                                                    steps = projectRoutine.steps.map { st ->
+                                                        st.copy(stages = st.stages.map { s -> s.copy() })
+                                                    }
+                                                )
+                                            )
+                                            projectRoutines = list
+                                        },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentCopy,
+                                            contentDescription = "Repetir rutina",
+                                            tint = LightTextSecondary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
 
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = routine?.title ?: "Rutina (no encontrada)",
-                                        style = MaterialTheme.typography.titleMedium.copy(
-                                            fontWeight = FontWeight.SemiBold,
-                                            fontSize = 14.sp
+                                    // Delete button
+                                    IconButton(
+                                        onClick = {
+                                            val list = projectRoutines.toMutableList()
+                                            list.removeAt(index)
+                                            projectRoutines = list
+                                        },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.DeleteOutline,
+                                            contentDescription = "Quitar",
+                                            tint = AccentCoral,
+                                            modifier = Modifier.size(16.dp)
                                         )
-                                    )
-                                    val duration = routine?.formattedTotalDuration() ?: "-"
-                                    Text(
-                                        text = "${routine?.steps?.size ?: 0} actividades • $duration",
-                                        style = MaterialTheme.typography.bodyMedium.copy(
-                                            fontSize = 11.sp,
-                                            color = LightTextSecondary
-                                        )
-                                    )
+                                    }
                                 }
                             }
 
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                // Duplicate button
-                                IconButton(
-                                    onClick = {
-                                        val list = routineSequence.toMutableList()
-                                        list.add(index + 1, routineId)
-                                        routineSequence = list
-                                    },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ContentCopy,
-                                        contentDescription = "Repetir rutina",
-                                        tint = LightTextSecondary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
+                            Spacer(modifier = Modifier.height(4.dp))
 
-                                // Delete button
-                                IconButton(
-                                    onClick = {
-                                        val list = routineSequence.toMutableList()
-                                        list.removeAt(index)
-                                        routineSequence = list
-                                    },
-                                    modifier = Modifier.size(32.dp)
+                            // Accordion Toggle for Activities & Stages in this Routine
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        expandedProjectRoutineIds = if (isExpanded) {
+                                            expandedProjectRoutineIds - routineKey
+                                        } else {
+                                            expandedProjectRoutineIds + routineKey
+                                        }
+                                    }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = if (isExpanded) "Ocultar contenido" else "Personalizar actividades ($activeStagesCount/$totalStagesCount etapas)",
+                                    fontSize = 11.sp,
+                                    color = PrimaryBlue,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Icon(
+                                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = null,
+                                    tint = PrimaryBlue,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+
+                            // Expanded Content: Activities & Stages inside this routine
+                            if (isExpanded) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(LightBackground)
+                                        .padding(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.DeleteOutline,
-                                        contentDescription = "Quitar",
-                                        tint = AccentCoral,
-                                        modifier = Modifier.size(16.dp)
-                                    )
+                                    if (projectRoutine.isCustomized) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.End
+                                        ) {
+                                            TextButton(
+                                                onClick = {
+                                                    val originalRout = routines.find { it.id == projectRoutine.routineId }
+                                                    if (originalRout != null) {
+                                                        val list = projectRoutines.toMutableList()
+                                                        list[index] = projectRoutine.copy(
+                                                            steps = originalRout.steps.map { st ->
+                                                                st.copy(stages = st.stages.map { s -> s.copy(isEnabled = true) })
+                                                            },
+                                                            isCustomized = false
+                                                        )
+                                                        projectRoutines = list
+                                                    }
+                                                },
+                                                contentPadding = PaddingValues(0.dp),
+                                                modifier = Modifier.height(24.dp)
+                                            ) {
+                                                Text("Restablecer a rutina original", fontSize = 10.sp, color = AccentAmber)
+                                            }
+                                        }
+                                    }
+
+                                    projectRoutine.steps.forEachIndexed { stepIdx, step ->
+                                        Card(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = CardDefaults.cardColors(containerColor = LightSurface),
+                                            border = BorderStroke(1.dp, LightBorder.copy(alpha = 0.5f))
+                                        ) {
+                                            Column(modifier = Modifier.padding(8.dp)) {
+                                                Text(
+                                                    text = step.activityTitle,
+                                                    style = MaterialTheme.typography.titleSmall.copy(
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        fontSize = 12.sp
+                                                    )
+                                                )
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                step.stages.forEachIndexed { stageIdx, stage ->
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clip(RoundedCornerShape(4.dp))
+                                                            .clickable {
+                                                                val nextEnabled = !stage.isEnabled
+                                                                val newStages = step.stages.toMutableList()
+                                                                newStages[stageIdx] = stage.copy(isEnabled = nextEnabled)
+                                                                val newSteps = projectRoutine.steps.toMutableList()
+                                                                newSteps[stepIdx] = step.copy(stages = newStages)
+                                                                val list = projectRoutines.toMutableList()
+                                                                list[index] = projectRoutine.copy(steps = newSteps, isCustomized = true)
+                                                                projectRoutines = list
+                                                            }
+                                                            .padding(vertical = 3.dp, horizontal = 4.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.SpaceBetween
+                                                    ) {
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                            modifier = Modifier.weight(1f)
+                                                        ) {
+                                                            Checkbox(
+                                                                checked = stage.isEnabled,
+                                                                onCheckedChange = { checked ->
+                                                                    val newStages = step.stages.toMutableList()
+                                                                    newStages[stageIdx] = stage.copy(isEnabled = checked)
+                                                                    val newSteps = projectRoutine.steps.toMutableList()
+                                                                    newSteps[stepIdx] = step.copy(stages = newStages)
+                                                                    val list = projectRoutines.toMutableList()
+                                                                    list[index] = projectRoutine.copy(steps = newSteps, isCustomized = true)
+                                                                    projectRoutines = list
+                                                                },
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(8.dp)
+                                                                    .clip(RoundedCornerShape(2.dp))
+                                                                    .background(
+                                                                        try {
+                                                                            Color(android.graphics.Color.parseColor(stage.colorHex))
+                                                                        } catch (e: Exception) {
+                                                                            PrimaryBlue
+                                                                        }
+                                                                    )
+                                                            )
+                                                            Text(
+                                                                text = stage.name,
+                                                                fontSize = 11.sp,
+                                                                color = if (stage.isEnabled) LightTextPrimary else LightTextTertiary
+                                                            )
+                                                        }
+                                                        val sMins = stage.durationSeconds / 60
+                                                        val sSecs = stage.durationSeconds % 60
+                                                        Text(
+                                                            text = if (sSecs > 0) "${sMins}m ${sSecs}s" else "${sMins}m",
+                                                            fontSize = 10.sp,
+                                                            color = if (stage.isEnabled) LightTextSecondary else LightTextTertiary
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -519,7 +724,15 @@ fun EditProjectScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    routineSequence = routineSequence + routine.id
+                                    val newPR = com.taskpie.app.model.ProjectRoutineItem(
+                                        routineId = routine.id,
+                                        title = routine.title,
+                                        steps = routine.steps.map { st ->
+                                            st.copy(stages = st.stages.map { s -> s.copy(isEnabled = true) })
+                                        },
+                                        isCustomized = false
+                                    )
+                                    projectRoutines = projectRoutines + newPR
                                     isSelectingRoutineForSequence = false
                                 },
                             shape = RoundedCornerShape(12.dp),
@@ -556,7 +769,8 @@ fun EditProjectScreen(
         val proj = existingProject.copy(
             title = title,
             description = description,
-            routineIds = routineSequence,
+            routineIds = projectRoutines.map { it.routineId },
+            projectRoutines = projectRoutines,
             activityIds = selectedActivityIds.toList()
         )
         StartSessionDialog(

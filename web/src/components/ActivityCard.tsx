@@ -57,6 +57,21 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({ activity, onEdit }) 
               >
                 {activity.category || 'General'}
               </span>
+              {activity.tags && activity.tags.map((t) => (
+                <span
+                  key={t}
+                  style={{
+                    fontSize: '0.7rem',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    background: 'rgba(255,255,255,0.06)',
+                    color: 'var(--text-secondary)',
+                    border: '1px solid var(--border-subtle)'
+                  }}
+                >
+                  #{t}
+                </span>
+              ))}
               {activity.isTemplate && (
                 <span
                   className="badge"

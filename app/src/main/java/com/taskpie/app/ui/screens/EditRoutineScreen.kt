@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -51,9 +52,9 @@ fun EditRoutineScreen(
         mutableStateOf(existingRoutine?.steps?.toBlocks() ?: emptyList())
     }
 
-    // targetBlockIndex: null = new single activity block, int = append to that block
     var selectingActivityForBlockIndex by remember { mutableStateOf<Int?>(null) }
     var isSelectingActivity by remember { mutableStateOf(false) }
+    var expandedStepIds by remember { mutableStateOf(setOf<String>()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val totalSeconds = remember(blocks) {
@@ -602,7 +603,7 @@ fun EditRoutineScreen(
 
                                                 Spacer(modifier = Modifier.height(6.dp))
 
-                                                // Auto Advance Switch
+                                                // Auto Advance Switch & Customize Button Row
                                                 Row(
                                                     modifier = Modifier
                                                         .fillMaxWidth()
@@ -613,7 +614,7 @@ fun EditRoutineScreen(
                                                     horizontalArrangement = Arrangement.SpaceBetween
                                                 ) {
                                                     Text(
-                                                        text = if (step.autoAdvance) "Continuar automáticamente" else "Pausar al terminar",
+                                                        text = if (step.autoAdvance) "Continuar auto." else "Pausar al terminar",
                                                         style = MaterialTheme.typography.labelMedium.copy(
                                                             fontSize = 11.sp,
                                                             fontWeight = FontWeight.Medium,
@@ -621,17 +622,169 @@ fun EditRoutineScreen(
                                                         )
                                                     )
 
-                                                    Switch(
-                                                        checked = step.autoAdvance,
-                                                        onCheckedChange = { checked ->
-                                                            val stepList = block.steps.toMutableList()
-                                                            stepList[stepIdx] = step.copy(autoAdvance = checked)
-                                                            val list = blocks.toMutableList()
-                                                            list[blockIndex] = block.copy(steps = stepList)
-                                                            blocks = list
-                                                        },
-                                                        modifier = Modifier.height(24.dp)
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        if (step.isCustomized) {
+                                                            Text(
+                                                                text = "Personalizada",
+                                                                fontSize = 9.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = AccentAmber,
+                                                                modifier = Modifier
+                                                                    .padding(end = 6.dp)
+                                                                    .clip(RoundedCornerShape(4.dp))
+                                                                    .background(AccentAmber.copy(alpha = 0.15f))
+                                                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                                                            )
+                                                        }
+
+                                                        Switch(
+                                                            checked = step.autoAdvance,
+                                                            onCheckedChange = { checked ->
+                                                                val stepList = block.steps.toMutableList()
+                                                                stepList[stepIdx] = step.copy(autoAdvance = checked)
+                                                                val list = blocks.toMutableList()
+                                                                list[blockIndex] = block.copy(steps = stepList)
+                                                                blocks = list
+                                                            },
+                                                            modifier = Modifier.height(24.dp)
+                                                        )
+                                                    }
+                                                }
+
+                                                // Accordion Toggle for Stages
+                                                val isExpanded = expandedStepIds.contains(step.id)
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable {
+                                                            expandedStepIds = if (isExpanded) {
+                                                                expandedStepIds - step.id
+                                                            } else {
+                                                                expandedStepIds + step.id
+                                                            }
+                                                        }
+                                                        .padding(vertical = 4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                ) {
+                                                    val activeStagesCount = step.stages.count { it.isEnabled }
+                                                    Text(
+                                                        text = if (isExpanded) "Ocultar etapas" else "Personalizar etapas ($activeStagesCount/${step.stages.size})",
+                                                        fontSize = 11.sp,
+                                                        color = PrimaryBlue,
+                                                        fontWeight = FontWeight.SemiBold
                                                     )
+                                                    Icon(
+                                                        imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                                        contentDescription = null,
+                                                        tint = PrimaryBlue,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+
+                                                // Expanded Stages Content
+                                                if (isExpanded) {
+                                                    Column(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clip(RoundedCornerShape(8.dp))
+                                                            .background(LightBackground)
+                                                            .padding(8.dp),
+                                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                                    ) {
+                                                        if (step.isCustomized) {
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.End
+                                                            ) {
+                                                                TextButton(
+                                                                    onClick = {
+                                                                        val originalAct = activities.find { it.id == (step.originalActivityId ?: step.activityId) }
+                                                                        if (originalAct != null) {
+                                                                            val restoredStages = originalAct.stages.map { it.copy(isEnabled = true) }
+                                                                            val stepList = block.steps.toMutableList()
+                                                                            stepList[stepIdx] = step.copy(
+                                                                                stages = restoredStages,
+                                                                                isCustomized = false
+                                                                            )
+                                                                            val list = blocks.toMutableList()
+                                                                            list[blockIndex] = block.copy(steps = stepList)
+                                                                            blocks = list
+                                                                        }
+                                                                    },
+                                                                    contentPadding = PaddingValues(0.dp),
+                                                                    modifier = Modifier.height(24.dp)
+                                                                ) {
+                                                                    Text("Restablecer a original", fontSize = 10.sp, color = AccentAmber)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        step.stages.forEachIndexed { stageIdx, stage ->
+                                                            Row(
+                                                                modifier = Modifier
+                                                                    .fillMaxWidth()
+                                                                    .clip(RoundedCornerShape(6.dp))
+                                                                    .background(LightSurface)
+                                                                    .clickable {
+                                                                        val nextEnabled = !stage.isEnabled
+                                                                        val newStages = step.stages.toMutableList()
+                                                                        newStages[stageIdx] = stage.copy(isEnabled = nextEnabled)
+                                                                        val stepList = block.steps.toMutableList()
+                                                                        stepList[stepIdx] = step.copy(stages = newStages, isCustomized = true)
+                                                                        val list = blocks.toMutableList()
+                                                                        list[blockIndex] = block.copy(steps = stepList)
+                                                                        blocks = list
+                                                                    }
+                                                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                horizontalArrangement = Arrangement.SpaceBetween
+                                                            ) {
+                                                                Row(
+                                                                    verticalAlignment = Alignment.CenterVertically,
+                                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                                    modifier = Modifier.weight(1f)
+                                                                ) {
+                                                                    Checkbox(
+                                                                        checked = stage.isEnabled,
+                                                                        onCheckedChange = { checked ->
+                                                                            val newStages = step.stages.toMutableList()
+                                                                            newStages[stageIdx] = stage.copy(isEnabled = checked)
+                                                                            val stepList = block.steps.toMutableList()
+                                                                            stepList[stepIdx] = step.copy(stages = newStages, isCustomized = true)
+                                                                            val list = blocks.toMutableList()
+                                                                            list[blockIndex] = block.copy(steps = stepList)
+                                                                            blocks = list
+                                                                        },
+                                                                        modifier = Modifier.size(18.dp)
+                                                                    )
+                                                                    Box(
+                                                                        modifier = Modifier
+                                                                            .size(8.dp)
+                                                                            .clip(CircleShape)
+                                                                            .background(
+                                                                                try {
+                                                                                    Color(android.graphics.Color.parseColor(stage.colorHex))
+                                                                                } catch (e: Exception) {
+                                                                                    PrimaryBlue
+                                                                                }
+                                                                            )
+                                                                    )
+                                                                    Text(
+                                                                        text = stage.name,
+                                                                        fontSize = 12.sp,
+                                                                        fontWeight = if (stage.isEnabled) FontWeight.Medium else FontWeight.Normal,
+                                                                        color = if (stage.isEnabled) LightTextPrimary else LightTextTertiary
+                                                                    )
+                                                                }
+                                                                Text(
+                                                                    text = stage.formattedDuration(),
+                                                                    fontSize = 11.sp,
+                                                                    color = if (stage.isEnabled) LightTextSecondary else LightTextTertiary
+                                                                )
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }

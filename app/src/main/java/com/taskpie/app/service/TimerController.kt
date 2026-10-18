@@ -149,10 +149,12 @@ object TimerController {
         customSessionName: String? = null,
         voiceEnabled: Boolean? = null
     ) {
+        val activeStages = activity.stages.filter { it.isEnabled }
+        if (activeStages.isEmpty()) return
         val routineStep = RoutineStep(
             activityId = activity.id,
             activityTitle = activity.title,
-            stages = activity.stages,
+            stages = activeStages,
             autoAdvance = true
         )
         startSession(
@@ -195,22 +197,32 @@ object TimerController {
         project.activityIds.forEach { actId ->
             val act = activities.find { it.id == actId }
             if (act != null) {
-                steps.add(
-                    RoutineStep(
-                        activityId = act.id,
-                        activityTitle = act.title,
-                        stages = act.stages,
-                        autoAdvance = true
+                val activeStages = act.stages.filter { it.isEnabled }
+                if (activeStages.isNotEmpty()) {
+                    steps.add(
+                        RoutineStep(
+                            activityId = act.id,
+                            activityTitle = act.title,
+                            stages = activeStages,
+                            autoAdvance = true
+                        )
                     )
-                )
+                }
             }
         }
 
-        // Rutinas del proyecto respetando la secuencia exacta y desglosando sus bloques
-        project.routineIds.forEach { rId ->
-            val rout = routines.find { it.id == rId }
-            if (rout != null) {
-                steps.addAll(rout.steps.unrollSteps())
+        // Rutinas del proyecto: si tiene projectRoutines (snapshots desacoplados con exclusiones granulares)
+        if (project.projectRoutines.isNotEmpty()) {
+            project.projectRoutines.forEach { pr ->
+                steps.addAll(pr.steps.unrollSteps())
+            }
+        } else {
+            // Compatibilidad con proyectos legados
+            project.routineIds.forEach { rId ->
+                val rout = routines.find { it.id == rId }
+                if (rout != null) {
+                    steps.addAll(rout.steps.unrollSteps())
+                }
             }
         }
 

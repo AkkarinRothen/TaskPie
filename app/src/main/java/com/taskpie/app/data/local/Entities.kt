@@ -19,6 +19,7 @@ data class ActivityEntity(
     val stages: List<Stage>,
     val isTemplate: Boolean,
     val category: String,
+    val tags: List<String> = emptyList(),
     val createdAt: Long
 ) {
     fun toDomain(): ActivityItem = ActivityItem(
@@ -28,6 +29,7 @@ data class ActivityEntity(
         stages = stages,
         isTemplate = isTemplate,
         category = category,
+        tags = tags,
         createdAt = createdAt
     )
 
@@ -39,6 +41,7 @@ data class ActivityEntity(
             stages = item.stages,
             isTemplate = item.isTemplate,
             category = item.category,
+            tags = item.tags,
             createdAt = item.createdAt
         )
     }
@@ -51,6 +54,7 @@ data class RoutineEntity(
     val description: String,
     val steps: List<RoutineStep>,
     val isTemplate: Boolean,
+    val tags: List<String> = emptyList(),
     val createdAt: Long
 ) {
     fun toDomain(): RoutineItem = RoutineItem(
@@ -59,6 +63,7 @@ data class RoutineEntity(
         description = description,
         steps = steps,
         isTemplate = isTemplate,
+        tags = tags,
         createdAt = createdAt
     )
 
@@ -69,6 +74,7 @@ data class RoutineEntity(
             description = item.description,
             steps = item.steps,
             isTemplate = item.isTemplate,
+            tags = item.tags,
             createdAt = item.createdAt
         )
     }
@@ -81,6 +87,8 @@ data class ProjectEntity(
     val description: String,
     val activityIds: List<String>,
     val routineIds: List<String>,
+    val projectRoutines: List<com.taskpie.app.model.ProjectRoutineItem> = emptyList(),
+    val tags: List<String> = emptyList(),
     val createdAt: Long
 ) {
     fun toDomain(): ProjectItem = ProjectItem(
@@ -89,6 +97,8 @@ data class ProjectEntity(
         description = description,
         activityIds = activityIds,
         routineIds = routineIds,
+        projectRoutines = projectRoutines,
+        tags = tags,
         createdAt = createdAt
     )
 
@@ -99,6 +109,8 @@ data class ProjectEntity(
             description = item.description,
             activityIds = item.activityIds,
             routineIds = item.routineIds,
+            projectRoutines = item.projectRoutines,
+            tags = item.tags,
             createdAt = item.createdAt
         )
     }

@@ -59,6 +59,21 @@ export const RoutineCard: React.FC<RoutineCardProps> = ({ routine, onEdit }) => 
               >
                 <Layers size={11} /> Rutina Secuencial
               </span>
+              {routine.tags && routine.tags.map((t) => (
+                <span
+                  key={t}
+                  style={{
+                    fontSize: '0.7rem',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    background: 'rgba(255,255,255,0.06)',
+                    color: 'var(--text-secondary)',
+                    border: '1px solid var(--border-subtle)'
+                  }}
+                >
+                  #{t}
+                </span>
+              ))}
               {routine.isTemplate && (
                 <span
                   className="badge"

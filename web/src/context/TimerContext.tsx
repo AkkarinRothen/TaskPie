@@ -447,11 +447,14 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const startSingleActivity = (activity: ActivityItem, customSessionName?: string) => {
+    const activeStages = activity.stages.filter((s) => s.isEnabled !== false);
+    if (activeStages.length === 0) return;
+
     const step: RoutineStep = {
       id: crypto.randomUUID ? crypto.randomUUID() : `step_${Date.now()}`,
       activityId: activity.id,
       activityTitle: activity.title,
-      stages: activity.stages,
+      stages: activeStages,
       autoAdvance: true
     };
     startSession(customSessionName?.trim() || activity.title, 'ACTIVITY', null, [step]);
@@ -473,24 +476,35 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     project.activityIds.forEach((id) => {
       const act = activities.find((a) => a.id === id);
       if (act) {
-        steps.push({
-          id: crypto.randomUUID ? crypto.randomUUID() : `p_step_${Date.now()}_${id}`,
-          activityId: act.id,
-          activityTitle: act.title,
-          stages: act.stages,
-          autoAdvance: true
-        });
+        const activeStages = act.stages.filter((s) => s.isEnabled !== false);
+        if (activeStages.length > 0) {
+          steps.push({
+            id: crypto.randomUUID ? crypto.randomUUID() : `p_step_${Date.now()}_${id}`,
+            activityId: act.id,
+            activityTitle: act.title,
+            stages: activeStages,
+            autoAdvance: true
+          });
+        }
       }
     });
 
-    // Agregar rutinas del proyecto respetando la secuencia exacta y desglosando sus bloques
-    project.routineIds.forEach((id) => {
-      const rout = routines.find((r) => r.id === id);
-      if (rout) {
-        const unrolled = unrollRoutineSteps(rout.steps);
+    // Si el proyecto tiene projectRoutines (snapshots desacoplados con exclusiones granulares)
+    if (project.projectRoutines && project.projectRoutines.length > 0) {
+      project.projectRoutines.forEach((pr) => {
+        const unrolled = unrollRoutineSteps(pr.steps);
         steps.push(...unrolled);
-      }
-    });
+      });
+    } else {
+      // Compatibilidad con proyectos legados
+      project.routineIds.forEach((id) => {
+        const rout = routines.find((r) => r.id === id);
+        if (rout) {
+          const unrolled = unrollRoutineSteps(rout.steps);
+          steps.push(...unrolled);
+        }
+      });
+    }
 
     startSession(project.title, 'PROJECT', project.title, steps);
   };

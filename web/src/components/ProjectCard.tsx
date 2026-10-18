@@ -16,12 +16,14 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onEdit }) => 
   const { activities, routines, deleteProject } = useData();
 
   const linkedActivities = activities.filter((a) => project.activityIds.includes(a.id));
-  const routinesCount = project.routineIds.length;
+  const routinesCount = project.projectRoutines?.length || project.routineIds.length;
 
-  const totalRoutinesSeconds = project.routineIds.reduce((acc, rId) => {
-    const rout = routines.find((r) => r.id === rId);
-    return acc + (rout ? calculateRoutineTotalSeconds(rout.steps) : 0);
-  }, 0);
+  const totalRoutinesSeconds = project.projectRoutines && project.projectRoutines.length > 0
+    ? project.projectRoutines.reduce((acc, pr) => acc + calculateRoutineTotalSeconds(pr.steps), 0)
+    : project.routineIds.reduce((acc, rId) => {
+        const rout = routines.find((r) => r.id === rId);
+        return acc + (rout ? calculateRoutineTotalSeconds(rout.steps) : 0);
+      }, 0);
   const totalActivitiesSeconds = linkedActivities.reduce((acc, act) => {
     return acc + act.stages.reduce((sAcc, s) => sAcc + s.durationSeconds, 0);
   }, 0);
@@ -56,17 +58,33 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onEdit }) => 
       <div>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
           <div>
-            <span
-              className="badge"
-              style={{
-                background: 'rgba(59, 130, 246, 0.15)',
-                color: '#3b82f6',
-                border: '1px solid rgba(59, 130, 246, 0.3)',
-                marginBottom: '4px'
-              }}
-            >
-              <Folder size={11} /> Proyecto Contenedor
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+              <span
+                className="badge"
+                style={{
+                  background: 'rgba(59, 130, 246, 0.15)',
+                  color: '#3b82f6',
+                  border: '1px solid rgba(59, 130, 246, 0.3)'
+                }}
+              >
+                <Folder size={11} /> Proyecto Contenedor
+              </span>
+              {project.tags && project.tags.map((t) => (
+                <span
+                  key={t}
+                  style={{
+                    fontSize: '0.7rem',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    background: 'rgba(255,255,255,0.06)',
+                    color: 'var(--text-secondary)',
+                    border: '1px solid var(--border-subtle)'
+                  }}
+                >
+                  #{t}
+                </span>
+              ))}
+            </div>
             <h3 style={{ fontSize: '1.15rem', color: 'var(--text-primary)', marginTop: '6px' }}>
               {project.title}
             </h3>

@@ -8,7 +8,8 @@ data class Stage(
     val durationSeconds: Long, // Duration in seconds
     val notes: String = "",
     val isOptional: Boolean = false,
-    val colorHex: String = "#3B82F6"
+    val colorHex: String = "#3B82F6",
+    val isEnabled: Boolean = true
 ) {
     val durationMinutes: Long
         get() = durationSeconds / 60
@@ -30,10 +31,11 @@ data class ActivityItem(
     val stages: List<Stage> = emptyList(),
     val isTemplate: Boolean = false,
     val category: String = "General",
+    val tags: List<String> = emptyList(),
     val createdAt: Long = System.currentTimeMillis()
 ) {
     val totalDurationSeconds: Long
-        get() = stages.sumOf { it.durationSeconds }
+        get() = stages.filter { it.isEnabled }.sumOf { it.durationSeconds }
 
     fun formattedTotalDuration(): String {
         val totalSecs = totalDurationSeconds
@@ -59,10 +61,12 @@ data class RoutineStep(
     val blockTitle: String? = null,
     val blockRepeatCount: Int = 1,
     val iterationIndex: Int = 0,
-    val totalIterations: Int = 1
+    val totalIterations: Int = 1,
+    val isCustomized: Boolean = false,
+    val originalActivityId: String? = null
 ) {
     val totalDurationSeconds: Long
-        get() = stages.sumOf { it.durationSeconds }
+        get() = stages.filter { it.isEnabled }.sumOf { it.durationSeconds }
 }
 
 data class RoutineBlock(
@@ -130,9 +134,13 @@ fun List<RoutineStep>.unrollSteps(): List<RoutineStep> {
         val repeats = b.repeatCount.coerceAtLeast(1)
         for (r in 0 until repeats) {
             for (s in b.steps) {
+                val activeStages = s.stages.filter { it.isEnabled }
+                if (activeStages.isEmpty()) continue
+
                 unrolled.add(
                     s.copy(
                         id = "${s.id}_iter_${r}_${System.currentTimeMillis()}",
+                        stages = activeStages,
                         blockId = if (b.steps.size > 1 || repeats > 1) b.id else null,
                         blockTitle = if (b.title.isNotBlank()) b.title else if (repeats > 1) "Bloque" else null,
                         blockRepeatCount = repeats,
@@ -152,6 +160,7 @@ data class RoutineItem(
     val description: String = "",
     val steps: List<RoutineStep> = emptyList(),
     val isTemplate: Boolean = false,
+    val tags: List<String> = emptyList(),
     val createdAt: Long = System.currentTimeMillis()
 ) {
     val totalDurationSeconds: Long
@@ -160,7 +169,7 @@ data class RoutineItem(
         }
 
     val totalStagesCount: Int
-        get() = steps.sumOf { it.stages.size }
+        get() = steps.sumOf { it.stages.count { st -> st.isEnabled } }
 
     fun formattedTotalDuration(): String {
         val totalSecs = totalDurationSeconds
@@ -170,12 +179,22 @@ data class RoutineItem(
     }
 }
 
+data class ProjectRoutineItem(
+    val id: String = UUID.randomUUID().toString(),
+    val routineId: String,
+    val title: String,
+    val steps: List<RoutineStep> = emptyList(),
+    val isCustomized: Boolean = false
+)
+
 data class ProjectItem(
     val id: String = UUID.randomUUID().toString(),
     val title: String,
     val description: String = "",
     val activityIds: List<String> = emptyList(),
     val routineIds: List<String> = emptyList(),
+    val projectRoutines: List<ProjectRoutineItem> = emptyList(),
+    val tags: List<String> = emptyList(),
     val createdAt: Long = System.currentTimeMillis()
 )
 
