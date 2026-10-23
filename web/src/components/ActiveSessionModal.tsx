@@ -134,6 +134,24 @@ export const ActiveSessionModal: React.FC = () => {
               ? 'Rutina en curso'
               : 'Proyecto en curso'}
           </div>
+          {timerState.totalCycles > 1 && (
+            <div
+              style={{
+                padding: '4px 12px',
+                borderRadius: 'var(--radius-full)',
+                background: timerState.isInCycleBreak ? 'rgba(245, 158, 11, 0.2)' : 'rgba(168, 85, 247, 0.2)',
+                border: timerState.isInCycleBreak ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid rgba(168, 85, 247, 0.4)',
+                color: timerState.isInCycleBreak ? 'var(--accent-amber)' : 'var(--accent-secondary)',
+                fontSize: '0.8rem',
+                fontWeight: 800,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              {timerState.isInCycleBreak ? '☕ Descanso entre Ciclos' : `🔁 Ciclo ${timerState.currentCycle} de ${timerState.totalCycles}`}
+            </div>
+          )}
           <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
             {timerState.sessionTitle}
           </h2>
@@ -337,7 +355,54 @@ export const ActiveSessionModal: React.FC = () => {
 
         {/* Giant Donut Pie Chart Center */}
         <div style={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
-          {currentStep && (
+          {timerState.isInCycleBreak ? (
+            <PieChart
+              stages={[{ id: 'break', name: 'Descanso', durationSeconds: timerState.cycleBreakSeconds, colorHex: '#f59e0b' }]}
+              activeStageIndex={0}
+              activeStageProgress={Math.min(1, Math.max(0, 1 - (timerState.remainingSeconds / (timerState.cycleBreakSeconds || 1))))}
+              size={pieChartSize}
+              donut={true}
+              innerRadiusRatio={0.72}
+              interactive={false}
+              centerContent={
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                  <span
+                    style={{
+                      fontSize: '0.85rem',
+                      fontWeight: 700,
+                      color: 'var(--accent-amber)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em'
+                    }}
+                  >
+                    Descanso entre Ciclos
+                  </span>
+                  <div
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '3.6rem',
+                      fontWeight: 800,
+                      color: 'var(--accent-amber)',
+                      lineHeight: 1,
+                      letterSpacing: '-0.03em'
+                    }}
+                  >
+                    {formatTime(timerState.remainingSeconds)}
+                  </div>
+                  <span
+                    style={{
+                      fontSize: '0.85rem',
+                      fontWeight: 600,
+                      color: 'var(--text-secondary)',
+                      marginTop: '4px'
+                    }}
+                  >
+                    Próximo: Ciclo {timerState.currentCycle + 1} de {timerState.totalCycles}
+                  </span>
+                </div>
+              }
+            />
+          ) : currentStep ? (
             <PieChart
               stages={currentStep.stages}
               activeStageIndex={timerState.currentStageIndex}
@@ -380,11 +445,12 @@ export const ActiveSessionModal: React.FC = () => {
                     }}
                   >
                     Etapa {timerState.currentStageIndex + 1} de {currentStep.stages.length}
+                    {timerState.totalCycles > 1 && ` • Ciclo ${timerState.currentCycle}/${timerState.totalCycles}`}
                   </span>
                 </div>
               }
             />
-          )}
+          ) : null}
         </div>
 
         {/* Mate Companion Widget Pill if enabled */}

@@ -1,5 +1,12 @@
 import type { ActivityItem, BackupData, FolderItem, ProjectItem, RoutineItem, SessionSummary } from '../types/models';
-import { DEFAULT_ACTIVITIES, DEFAULT_FOLDERS, DEFAULT_PROJECTS, DEFAULT_ROUTINES } from '../types/templates';
+import {
+  DEFAULT_ACTIVITIES,
+  DEFAULT_FOLDERS,
+  DEFAULT_PROJECTS,
+  DEFAULT_ROUTINES,
+  SOLO_ROLEPLAY,
+  SOLO_ROLEPLAY_ROUTINE
+} from '../types/templates';
 
 const DB_NAME = 'taskpie_db';
 const DB_VERSION = 1;
@@ -101,6 +108,8 @@ export const StorageService = {
       for (const activity of DEFAULT_ACTIVITIES) {
         await putToStore(STORES.ACTIVITIES, activity);
       }
+    } else if (!existingActivities.some((activity) => activity.id === SOLO_ROLEPLAY.id)) {
+      await putToStore(STORES.ACTIVITIES, SOLO_ROLEPLAY);
     }
 
     // Check and seed Routines
@@ -109,6 +118,8 @@ export const StorageService = {
       for (const routine of DEFAULT_ROUTINES) {
         await putToStore(STORES.ROUTINES, routine);
       }
+    } else if (!existingRoutines.some((routine) => routine.id === SOLO_ROLEPLAY_ROUTINE.id)) {
+      await putToStore(STORES.ROUTINES, SOLO_ROLEPLAY_ROUTINE);
     }
 
     // Check and seed Projects
@@ -116,6 +127,13 @@ export const StorageService = {
     if (existingProjects.length === 0) {
       for (const project of DEFAULT_PROJECTS) {
         await putToStore(STORES.PROJECTS, project);
+      }
+    } else {
+      const soloRoleplayProject = DEFAULT_PROJECTS.find(
+        (project) => project.id === 'tpl_project_solo_roleplay_campaign'
+      );
+      if (soloRoleplayProject && !existingProjects.some((project) => project.id === soloRoleplayProject.id)) {
+        await putToStore(STORES.PROJECTS, soloRoleplayProject);
       }
     }
   },

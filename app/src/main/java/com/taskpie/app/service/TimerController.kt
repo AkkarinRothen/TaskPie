@@ -147,7 +147,9 @@ object TimerController {
         context: Context,
         activity: ActivityItem,
         customSessionName: String? = null,
-        voiceEnabled: Boolean? = null
+        voiceEnabled: Boolean? = null,
+        repeatCount: Int = 1,
+        cycleBreakSeconds: Long = 0L
     ) {
         val activeStages = activity.stages.filter { it.isEnabled }
         if (activeStages.isEmpty()) return
@@ -163,7 +165,9 @@ object TimerController {
             contextType = "ACTIVITY",
             parentTitle = null,
             steps = listOf(routineStep),
-            voiceEnabled = voiceEnabled
+            voiceEnabled = voiceEnabled,
+            repeatCount = repeatCount,
+            cycleBreakSeconds = cycleBreakSeconds
         )
     }
 
@@ -171,7 +175,9 @@ object TimerController {
         context: Context,
         routine: RoutineItem,
         customSessionName: String? = null,
-        voiceEnabled: Boolean? = null
+        voiceEnabled: Boolean? = null,
+        repeatCount: Int = routine.defaultRepeatCount.coerceAtLeast(1),
+        cycleBreakSeconds: Long = routine.defaultCycleBreakSeconds
     ) {
         startSession(
             context = context,
@@ -179,7 +185,9 @@ object TimerController {
             contextType = "ROUTINE",
             parentTitle = routine.title,
             steps = routine.steps.unrollSteps(),
-            voiceEnabled = voiceEnabled
+            voiceEnabled = voiceEnabled,
+            repeatCount = repeatCount,
+            cycleBreakSeconds = cycleBreakSeconds
         )
     }
 
@@ -189,7 +197,9 @@ object TimerController {
         activities: List<ActivityItem>,
         routines: List<RoutineItem>,
         customSessionName: String? = null,
-        voiceEnabled: Boolean? = null
+        voiceEnabled: Boolean? = null,
+        repeatCount: Int = project.defaultRepeatCount.coerceAtLeast(1),
+        cycleBreakSeconds: Long = project.defaultCycleBreakSeconds
     ) {
         val steps = mutableListOf<RoutineStep>()
 
@@ -232,7 +242,9 @@ object TimerController {
             contextType = "PROJECT",
             parentTitle = project.title,
             steps = steps,
-            voiceEnabled = voiceEnabled
+            voiceEnabled = voiceEnabled,
+            repeatCount = repeatCount,
+            cycleBreakSeconds = cycleBreakSeconds
         )
     }
 
@@ -241,7 +253,9 @@ object TimerController {
         projectName: String,
         activity: ActivityItem,
         customSessionName: String? = null,
-        voiceEnabled: Boolean? = null
+        voiceEnabled: Boolean? = null,
+        repeatCount: Int = 1,
+        cycleBreakSeconds: Long = 0L
     ) {
         val routineStep = RoutineStep(
             activityId = activity.id,
@@ -255,7 +269,9 @@ object TimerController {
             contextType = "PROJECT",
             parentTitle = projectName,
             steps = listOf(routineStep),
-            voiceEnabled = voiceEnabled
+            voiceEnabled = voiceEnabled,
+            repeatCount = repeatCount,
+            cycleBreakSeconds = cycleBreakSeconds
         )
     }
 
@@ -265,7 +281,9 @@ object TimerController {
         contextType: String,
         parentTitle: String?,
         steps: List<RoutineStep>,
-        voiceEnabled: Boolean? = null
+        voiceEnabled: Boolean? = null,
+        repeatCount: Int = 1,
+        cycleBreakSeconds: Long = 0L
     ) {
         if (steps.isEmpty() || steps.all { it.stages.isEmpty() }) return
 
@@ -276,7 +294,8 @@ object TimerController {
             voiceManager = VoiceAnnouncementManager(context.applicationContext)
         }
 
-        val totalPlannedSeconds = steps.sumOf { it.totalDurationSeconds }
+        val singleCyclePlanned = steps.sumOf { it.totalDurationSeconds }
+        val totalPlannedSeconds = singleCyclePlanned * repeatCount + (cycleBreakSeconds * (repeatCount - 1).coerceAtLeast(0))
         val firstStep = steps[0]
         val firstStage = firstStep.stages.firstOrNull() ?: return
 
@@ -300,11 +319,20 @@ object TimerController {
             isVoiceEnabled = isVoice,
             isMateModeEnabled = defaultMateEnabled,
             mateIntervalMinutes = defaultMateInterval,
-            mateRemainingSeconds = defaultMateInterval * 60L
+            mateRemainingSeconds = defaultMateInterval * 60L,
+            totalCycles = repeatCount.coerceAtLeast(1),
+            currentCycle = 1,
+            cycleBreakSeconds = cycleBreakSeconds,
+            isInCycleBreak = false,
+            cycleBreakRemainingSeconds = 0L
         )
 
         if (isVoice) {
-            voiceManager?.speak("Iniciando: ${firstStage.name}")
+            if (repeatCount > 1) {
+                voiceManager?.speak("Iniciando Ciclo 1 de $repeatCount. ${firstStage.name}")
+            } else {
+                voiceManager?.speak("Iniciando: ${firstStage.name}")
+            }
         }
 
         startForegroundService(context)
@@ -404,6 +432,53 @@ object TimerController {
     private fun tick() {
         val currentState = _timerState.value
         if (currentState.status != TimerStatus.RUNNING) return
+
+        // Handle cycle break if active
+        if (currentState.isInCycleBreak) {
+            val breakRemaining = currentState.cycleBreakRemainingSeconds - 1
+            val totalElapsed = currentState.totalElapsedSecondsSession + 1
+
+            if (breakRemaining <= 0) {
+                // Break ended! Transition to next cycle
+                val nextCycle = currentState.currentCycle + 1
+                val firstActivity = currentState.routineSteps.firstOrNull()
+                val firstStage = firstActivity?.stages?.firstOrNull()
+
+                if (firstStage != null) {
+                    _timerState.update {
+                        it.copy(
+                            isInCycleBreak = false,
+                            cycleBreakRemainingSeconds = 0,
+                            currentCycle = nextCycle,
+                            currentActivityIndex = 0,
+                            currentStageIndex = 0,
+                            remainingSeconds = firstStage.durationSeconds,
+                            elapsedSecondsInCurrentStage = 0,
+                            totalElapsedSecondsSession = totalElapsed
+                        )
+                    }
+                    triggerAlert()
+                    if (_timerState.value.isVoiceEnabled) {
+                        scope.launch {
+                            delay(600L)
+                            voiceManager?.speak("Descanso finalizado. Iniciando Ciclo $nextCycle de ${currentState.totalCycles}")
+                        }
+                    }
+                    updateNotification()
+                } else {
+                    finishSession()
+                }
+            } else {
+                _timerState.update {
+                    it.copy(
+                        cycleBreakRemainingSeconds = breakRemaining,
+                        totalElapsedSecondsSession = totalElapsed
+                    )
+                }
+                updateNotification()
+            }
+            return
+        }
 
         val remaining = currentState.remainingSeconds - 1
         val elapsedStage = currentState.elapsedSecondsInCurrentStage + 1
@@ -566,8 +641,54 @@ object TimerController {
                     finishSession()
                 }
             } else {
-                // Whole session finished!
-                finishSession()
+                // Whole cycle sequence completed!
+                if (state.currentCycle < state.totalCycles) {
+                    val nextCycle = state.currentCycle + 1
+                    if (state.cycleBreakSeconds > 0) {
+                        _timerState.update {
+                            it.copy(
+                                isInCycleBreak = true,
+                                cycleBreakRemainingSeconds = state.cycleBreakSeconds
+                            )
+                        }
+                        if (_timerState.value.isVoiceEnabled) {
+                            scope.launch {
+                                delay(800L)
+                                val breakMinutes = state.cycleBreakSeconds / 60
+                                val breakText = if (breakMinutes > 0) "$breakMinutes minutos" else "${state.cycleBreakSeconds} segundos"
+                                voiceManager?.speak("Ciclo ${state.currentCycle} completado. Descanso de $breakText.")
+                            }
+                        }
+                        updateNotification()
+                    } else {
+                        // Direct next cycle with no break
+                        val firstActivity = state.routineSteps.firstOrNull()
+                        val firstStage = firstActivity?.stages?.firstOrNull()
+                        if (firstStage != null) {
+                            _timerState.update {
+                                it.copy(
+                                    currentCycle = nextCycle,
+                                    currentActivityIndex = 0,
+                                    currentStageIndex = 0,
+                                    remainingSeconds = firstStage.durationSeconds,
+                                    elapsedSecondsInCurrentStage = 0
+                                )
+                            }
+                            if (_timerState.value.isVoiceEnabled) {
+                                scope.launch {
+                                    delay(800L)
+                                    voiceManager?.speak("Iniciando Ciclo $nextCycle de ${state.totalCycles}")
+                                }
+                            }
+                            updateNotification()
+                        } else {
+                            finishSession()
+                        }
+                    }
+                } else {
+                    // All cycles finished!
+                    finishSession()
+                }
             }
         }
     }
@@ -581,7 +702,11 @@ object TimerController {
         if (_timerState.value.isVoiceEnabled) {
             scope.launch {
                 delay(700L)
-                voiceManager?.speak("Sesión completada")
+                if (state.totalCycles > 1) {
+                    voiceManager?.speak("¡Sesión completada! Has terminado todos los ${state.totalCycles} ciclos.")
+                } else {
+                    voiceManager?.speak("Sesión completada")
+                }
             }
         }
 

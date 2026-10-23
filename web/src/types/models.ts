@@ -140,6 +140,8 @@ export interface RoutineItem {
   steps: RoutineStep[];
   isTemplate: boolean;
   tags?: string[];
+  defaultRepeatCount?: number;
+  defaultCycleBreakSeconds?: number;
   createdAt: number;
 }
 
@@ -159,6 +161,8 @@ export interface ProjectItem {
   routineIds: string[]; // Para compatibilidad
   projectRoutines?: ProjectRoutineItem[]; // Rutinas desacopladas configuradas
   tags?: string[];
+  defaultRepeatCount?: number;
+  defaultCycleBreakSeconds?: number;
   createdAt: number;
 }
 
@@ -214,6 +218,11 @@ export interface TimerState {
   mateIntervalMinutes: number;
   mateRemainingSeconds: number;
   lastMateAlertTime: number;
+  totalCycles: number;
+  currentCycle: number;
+  cycleBreakSeconds: number;
+  isInCycleBreak: boolean;
+  cycleBreakRemainingSeconds: number;
 }
 
 export interface BackupData {

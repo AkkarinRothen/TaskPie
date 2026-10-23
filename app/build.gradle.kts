@@ -5,6 +5,17 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+val releaseStoreFile = providers.gradleProperty("TASKPIE_RELEASE_STORE_FILE").orNull
+val releaseStorePassword = providers.gradleProperty("TASKPIE_RELEASE_STORE_PASSWORD").orNull
+val releaseKeyAlias = providers.gradleProperty("TASKPIE_RELEASE_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.gradleProperty("TASKPIE_RELEASE_KEY_PASSWORD").orNull
+val hasReleaseSigning = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.taskpie.app"
     compileSdk = 34
@@ -13,8 +24,8 @@ android {
         applicationId = "com.taskpie.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -30,6 +41,17 @@ android {
                 "proguard-rules.pro"
             )
         }
+    }
+    if (hasReleaseSigning) {
+        signingConfigs {
+            create("taskpieRelease") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+        buildTypes.getByName("release").signingConfig = signingConfigs.getByName("taskpieRelease")
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

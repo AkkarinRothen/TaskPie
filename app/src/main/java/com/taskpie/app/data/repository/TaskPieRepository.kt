@@ -124,6 +124,7 @@ class TaskPieRepository(private val dao: TaskPieDao) {
         dao.insertRoutines(routineEntities)
         dao.insertProject(ProjectEntity.fromDomain(BuiltInTemplates.DEFAULT_PROJECT))
         dao.insertProject(ProjectEntity.fromDomain(BuiltInTemplates.PROJECT_BALANCED_DAY))
+        dao.insertProject(ProjectEntity.fromDomain(BuiltInTemplates.PROJECT_SOLO_ROLEPLAY_CAMPAIGN))
         checkAndSeedFolders()
     }
 }

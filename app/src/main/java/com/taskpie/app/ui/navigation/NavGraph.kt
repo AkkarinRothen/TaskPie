@@ -27,9 +27,10 @@ sealed class Screen(val route: String) {
 }
 
 @Composable
-fun TaskPieNavHost(
+internal fun TaskPieNavHost(
     navController: NavHostController,
-    viewModel: TaskPieViewModel
+    viewModel: TaskPieViewModel,
+    libraryState: HomeLibraryState
 ) {
     NavHost(
         navController = navController,
@@ -38,6 +39,7 @@ fun TaskPieNavHost(
         composable(Screen.Home.route) {
             HomeScreen(
                 viewModel = viewModel,
+                libraryState = libraryState,
                 onNavigateToActiveSession = { navController.navigate(Screen.ActiveSession.route) },
                 onNavigateToCreateActivity = { navController.navigate(Screen.CreateActivity.route) },
                 onNavigateToEditActivity = { id -> navController.navigate(Screen.EditActivity.createRoute(id)) },

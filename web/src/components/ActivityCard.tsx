@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Play, Edit3, Trash2, Clock, Sparkles } from 'lucide-react';
 import type { ActivityItem } from '../types/models';
 import { PieChart } from './PieChart';
 import { useTimer } from '../context/TimerContext';
 import { useData } from '../context/DataContext';
+import { StartSessionModal } from './StartSessionModal';
 
 interface ActivityCardProps {
   activity: ActivityItem;
@@ -13,6 +14,7 @@ interface ActivityCardProps {
 export const ActivityCard: React.FC<ActivityCardProps> = ({ activity, onEdit }) => {
   const { startSingleActivity } = useTimer();
   const { deleteActivity } = useData();
+  const [showStartModal, setShowStartModal] = useState(false);
 
   const totalSeconds = activity.stages.reduce((acc, s) => acc + s.durationSeconds, 0);
   const hours = Math.floor(totalSeconds / 3600);
@@ -192,7 +194,7 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({ activity, onEdit }) 
             </button>
           )}
           <button
-            onClick={() => startSingleActivity(activity)}
+            onClick={() => setShowStartModal(true)}
             className="btn-primary btn-sm"
             style={{ gap: '6px' }}
           >
@@ -201,6 +203,17 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({ activity, onEdit }) 
           </button>
         </div>
       </div>
+
+      <StartSessionModal
+        isOpen={showStartModal}
+        title={activity.title}
+        cycleDurationSeconds={totalSeconds}
+        onDismiss={() => setShowStartModal(false)}
+        onStart={(customName, repeatCount, cycleBreakSeconds) => {
+          setShowStartModal(false);
+          startSingleActivity(activity, customName, repeatCount, cycleBreakSeconds);
+        }}
+      />
     </div>
   );
 };

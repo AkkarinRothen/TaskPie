@@ -1,10 +1,14 @@
 package com.taskpie.app.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -21,17 +25,30 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.taskpie.app.model.ActivityItem
 import com.taskpie.app.model.RoutineBlock
 import com.taskpie.app.model.RoutineItem
 import com.taskpie.app.model.RoutineStep
 import com.taskpie.app.model.toBlocks
 import com.taskpie.app.model.toFlatSteps
+import com.taskpie.app.data.local.EditorDraftRead
+import com.taskpie.app.data.local.RoutineEditorDraft
 import com.taskpie.app.ui.theme.*
+import com.taskpie.app.ui.components.CreationStepIndicator
+import com.taskpie.app.ui.components.EditorDraftRecoveryDialog
+import com.taskpie.app.ui.components.InvalidEditorDraftDialog
+import com.taskpie.app.ui.components.EditorUndoHistory
+import com.taskpie.app.ui.components.DragReorderHandle
 import com.taskpie.app.ui.viewmodel.TaskPieViewModel
 import java.util.UUID
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
+import androidx.compose.runtime.snapshotFlow
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun EditRoutineScreen(
     viewModel: TaskPieViewModel,
@@ -45,6 +62,22 @@ fun EditRoutineScreen(
         routines.find { it.id == routineId }
     }
 
+    val draftKey = remember(routineId) { viewModel.editorDraftKey("routine", routineId) }
+    val draftRead = remember(draftKey) { viewModel.readRoutineDraft(draftKey) }
+    var draftPromptVisible by remember(draftKey) {
+        mutableStateOf(draftRead is EditorDraftRead.Found)
+    }
+    var draftReadyToPersist by remember(draftKey) {
+        mutableStateOf(draftRead is EditorDraftRead.Missing)
+    }
+    var invalidDraftVisible by remember(draftKey) { mutableStateOf(false) }
+    val baseBlocks = remember(existingRoutine) { existingRoutine?.steps?.toBlocks() ?: emptyList() }
+    val baseDraft = remember(existingRoutine, baseBlocks) {
+        existingRoutine?.let {
+            RoutineEditorDraft(it.title, it.description, it.isTemplate, baseBlocks, 1)
+        }
+    }
+
     var title by remember(existingRoutine) { mutableStateOf(existingRoutine?.title ?: "") }
     var description by remember(existingRoutine) { mutableStateOf(existingRoutine?.description ?: "") }
     var isTemplate by remember(existingRoutine) { mutableStateOf(existingRoutine?.isTemplate ?: false) }
@@ -54,8 +87,14 @@ fun EditRoutineScreen(
 
     var selectingActivityForBlockIndex by remember { mutableStateOf<Int?>(null) }
     var isSelectingActivity by remember { mutableStateOf(false) }
+    var isCreatingActivity by remember { mutableStateOf(false) }
+    var activitySearchQuery by remember { mutableStateOf("") }
     var expandedStepIds by remember { mutableStateOf(setOf<String>()) }
+    var selectedRoutineItemIds by remember { mutableStateOf(setOf<String>()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var creationStep by remember(routineId) { mutableIntStateOf(if (routineId != null) 1 else 0) }
+    val editorListState = rememberLazyListState()
+    var reviewScrollTarget by remember { mutableIntStateOf(-1) }
 
     val totalSeconds = remember(blocks) {
         blocks.sumOf { b ->
@@ -63,8 +102,136 @@ fun EditRoutineScreen(
         }
     }
     val totalMinutes = totalSeconds / 60
+    val totalDurationLabel = if (totalSeconds % 60 > 0) {
+        "${totalMinutes}m ${totalSeconds % 60}s"
+    } else {
+        "${totalMinutes}m"
+    }
     val totalActivitiesCount = remember(blocks) {
         blocks.sumOf { it.steps.size * it.repeatCount.coerceAtLeast(1) }
+    }
+    val filteredActivities = remember(activities, activitySearchQuery) {
+        if (activitySearchQuery.isBlank()) activities
+        else activities.filter { it.title.contains(activitySearchQuery.trim(), ignoreCase = true) }
+    }
+
+    LaunchedEffect(draftKey, draftRead) {
+        if (draftRead is EditorDraftRead.Corrupt) {
+            viewModel.deleteEditorDraft(draftKey)
+            invalidDraftVisible = true
+            draftReadyToPersist = true
+        }
+    }
+
+    val currentDraft = RoutineEditorDraft(title, description, isTemplate, blocks, creationStep)
+    val history = remember(draftKey) { EditorUndoHistory(currentDraft.copy(creationStep = 0)) }
+    LaunchedEffect(draftKey, draftReadyToPersist, draftPromptVisible) {
+        if (!draftReadyToPersist || draftPromptVisible) return@LaunchedEffect
+        snapshotFlow { RoutineEditorDraft(title, description, isTemplate, blocks, 0) }
+            .drop(1)
+            .collectLatest { snapshot ->
+                delay(500)
+                history.record(snapshot)
+            }
+    }
+    fun restoreHistory(snapshot: RoutineEditorDraft) {
+        title = snapshot.title
+        description = snapshot.description
+        isTemplate = snapshot.isTemplate
+        blocks = snapshot.blocks
+    }
+    fun moveBlock(from: Int, to: Int) {
+        if (from !in blocks.indices || to !in blocks.indices) return
+        val reordered = blocks.toMutableList()
+        reordered.add(to, reordered.removeAt(from))
+        blocks = reordered
+    }
+    fun moveStep(blockIndex: Int, from: Int, to: Int) {
+        val block = blocks.getOrNull(blockIndex) ?: return
+        if (from !in block.steps.indices || to !in block.steps.indices) return
+        val steps = block.steps.toMutableList()
+        steps.add(to, steps.removeAt(from))
+        val updated = blocks.toMutableList()
+        updated[blockIndex] = block.copy(steps = steps)
+        blocks = updated
+    }
+    fun toggleRoutineItemSelection(key: String) {
+        selectedRoutineItemIds = if (key in selectedRoutineItemIds) selectedRoutineItemIds - key else selectedRoutineItemIds + key
+    }
+    fun removeSelectedRoutineItems() {
+        blocks = blocks.mapIndexedNotNull { blockIndex, block ->
+            if ("block:${block.id}" in selectedRoutineItemIds) return@mapIndexedNotNull null
+            val keptSteps = block.steps.filterNot { "step:${it.id}" in selectedRoutineItemIds }
+            val repeatable = block.repeatCount > 1 || block.title.isNotBlank()
+            if (keptSteps.isEmpty() && !repeatable) null else block.copy(steps = keptSteps)
+        }
+        selectedRoutineItemIds = emptySet()
+    }
+    LaunchedEffect(creationStep, reviewScrollTarget, errorMessage) {
+        if (creationStep == 1 && reviewScrollTarget >= 0) {
+            delay(100)
+            editorListState.animateScrollToItem(reviewScrollTarget.coerceAtMost(editorListState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0))
+            reviewScrollTarget = -1
+        }
+    }
+    val hasDraftChanges = if (routineId == null) {
+        title.isNotBlank() || description.isNotBlank() || isTemplate || blocks.isNotEmpty()
+    } else {
+        baseDraft != null && currentDraft != baseDraft
+    }
+
+    LaunchedEffect(draftKey, title, description, isTemplate, blocks, creationStep, draftReadyToPersist, hasDraftChanges, existingRoutine) {
+        if (!draftReadyToPersist || (routineId != null && existingRoutine == null)) return@LaunchedEffect
+        delay(700)
+        if (hasDraftChanges) viewModel.saveEditorDraft(draftKey, currentDraft)
+        else viewModel.deleteEditorDraft(draftKey)
+    }
+
+    fun addActivityToSelectedBlock(activity: ActivityItem) {
+        val step = RoutineStep(
+            activityId = activity.id,
+            activityTitle = activity.title,
+            stages = activity.stages,
+            autoAdvance = true
+        )
+        val blockIndex = selectingActivityForBlockIndex
+        if (blockIndex != null && blockIndex in blocks.indices) {
+            val updated = blocks.toMutableList()
+            updated[blockIndex] = updated[blockIndex].copy(steps = updated[blockIndex].steps + step)
+            blocks = updated
+        } else {
+            blocks = blocks + RoutineBlock(
+                id = "block_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}",
+                title = "",
+                repeatCount = 1,
+                steps = listOf(step)
+            )
+        }
+        isSelectingActivity = false
+        selectingActivityForBlockIndex = null
+        activitySearchQuery = ""
+    }
+
+    fun duplicateBlock(blockIndex: Int) {
+        val source = blocks.getOrNull(blockIndex) ?: return
+        val newBlockId = UUID.randomUUID().toString()
+        val copiedSteps = source.steps.map { step ->
+            step.copy(
+                id = UUID.randomUUID().toString(),
+                stages = step.stages.map { stage -> stage.copy(id = UUID.randomUUID().toString()) },
+                blockId = newBlockId,
+                blockTitle = source.title,
+                blockRepeatCount = source.repeatCount
+            )
+        }
+        val updatedBlocks = blocks.toMutableList()
+        updatedBlocks.add(blockIndex + 1, source.copy(id = newBlockId, steps = copiedSteps))
+        blocks = updatedBlocks
+    }
+
+    BackHandler(enabled = creationStep > 0) {
+        creationStep -= 1
+        errorMessage = null
     }
 
     Scaffold(
@@ -77,39 +244,69 @@ fun EditRoutineScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                    IconButton(onClick = {
+                        if (creationStep > 0) {
+                            creationStep -= 1
+                            errorMessage = null
+                        } else {
+                            onNavigateBack()
+                        }
+                    }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = if (creationStep > 0) "Paso anterior" else "Volver")
                     }
                 },
                 actions = {
+                    IconButton(onClick = { history.undo()?.let(::restoreHistory) }, enabled = history.canUndo) {
+                        Icon(Icons.Default.Undo, contentDescription = "Deshacer")
+                    }
+                    IconButton(onClick = { history.redo()?.let(::restoreHistory) }, enabled = history.canRedo) {
+                        Icon(Icons.Default.Redo, contentDescription = "Rehacer")
+                    }
                     Button(
                         onClick = {
-                            if (title.isBlank()) {
-                                errorMessage = "Ingresa un título para la rutina"
-                                return@Button
+                            when (creationStep) {
+                                0 -> if (title.isBlank()) {
+                                    errorMessage = "Ingresa un título para la rutina"
+                                } else {
+                                    errorMessage = null
+                                    creationStep = 1
+                                }
+                                1 -> if (blocks.none { it.steps.isNotEmpty() }) {
+                                    errorMessage = "Agrega al menos una actividad a la rutina"
+                                } else {
+                                    errorMessage = null
+                                    creationStep = 2
+                                }
+                                else -> {
+                                    if (title.isBlank()) {
+                                        creationStep = 0
+                                        errorMessage = "Ingresa un título para la rutina"
+                                        return@Button
+                                    }
+                                    val validBlocks = blocks.filter { it.steps.isNotEmpty() }
+                                    if (validBlocks.isEmpty()) {
+                                        creationStep = 1
+                                        errorMessage = "Agrega al menos una actividad a la rutina"
+                                        return@Button
+                                    }
+                                    val item = RoutineItem(
+                                        id = existingRoutine?.id ?: UUID.randomUUID().toString(),
+                                        title = title.trim(),
+                                        description = description.trim(),
+                                        steps = validBlocks.toFlatSteps(),
+                                        isTemplate = isTemplate,
+                                        createdAt = existingRoutine?.createdAt ?: System.currentTimeMillis()
+                                    )
+                                    viewModel.deleteEditorDraft(draftKey)
+                                    viewModel.saveRoutine(item)
+                                    onNavigateBack()
+                                }
                             }
-                            val validBlocks = blocks.filter { it.steps.isNotEmpty() }
-                            if (validBlocks.isEmpty()) {
-                                errorMessage = "Agrega al menos una actividad a la rutina"
-                                return@Button
-                            }
-
-                            val flattenedSteps = validBlocks.toFlatSteps()
-                            val item = RoutineItem(
-                                id = existingRoutine?.id ?: UUID.randomUUID().toString(),
-                                title = title.trim(),
-                                description = description.trim(),
-                                steps = flattenedSteps,
-                                isTemplate = isTemplate,
-                                createdAt = existingRoutine?.createdAt ?: System.currentTimeMillis()
-                            )
-                            viewModel.saveRoutine(item)
-                            onNavigateBack()
                         },
                         shape = RoundedCornerShape(10.dp),
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                     ) {
-                        Text("Guardar", fontWeight = FontWeight.Bold)
+                        Text(when (creationStep) { 0 -> "Siguiente"; 1 -> "Revisar"; else -> "Guardar" }, fontWeight = FontWeight.Bold)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = LightBackground)
@@ -118,12 +315,15 @@ fun EditRoutineScreen(
         containerColor = LightBackground
     ) { paddingValues ->
         LazyColumn(
+            state = editorListState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            item { CreationStepIndicator(creationStep) }
+            if (creationStep == 0) {
             // Routine Information
             item {
                 Card(
@@ -192,6 +392,7 @@ fun EditRoutineScreen(
                     }
                 }
             }
+            }
 
             if (errorMessage != null) {
                 item {
@@ -204,6 +405,7 @@ fun EditRoutineScreen(
                 }
             }
 
+            if (creationStep == 1) {
             // Steps Section Header
             item {
                 Row(
@@ -217,7 +419,7 @@ fun EditRoutineScreen(
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                         )
                         Text(
-                            text = "$totalActivitiesCount actividades programadas • Total: $totalMinutes min",
+                            text = "$totalActivitiesCount actividades programadas • Total: $totalDurationLabel",
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 fontSize = 12.sp,
                                 color = LightTextSecondary
@@ -258,6 +460,13 @@ fun EditRoutineScreen(
                             Icon(Icons.Default.Repeat, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("+ Bloque", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                if (selectedRoutineItemIds.isNotEmpty()) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = ::removeSelectedRoutineItems) {
+                            Text("Quitar ${selectedRoutineItemIds.size} seleccionados")
                         }
                     }
                 }
@@ -307,7 +516,12 @@ fun EditRoutineScreen(
                     val isRepeatableBlock = block.repeatCount > 1 || block.steps.size > 1 || block.title.isNotBlank()
 
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().combinedClickable(
+                            onClick = {
+                                if (selectedRoutineItemIds.isNotEmpty()) toggleRoutineItemSelection("block:${block.id}")
+                            },
+                            onLongClick = { toggleRoutineItemSelection("block:${block.id}") }
+                        ),
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = if (isRepeatableBlock) AccentIndigoLight.copy(alpha = 0.35f) else LightSurface
@@ -325,6 +539,12 @@ fun EditRoutineScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
+                                if (selectedRoutineItemIds.isNotEmpty()) {
+                                    Checkbox(
+                                        checked = "block:${block.id}" in selectedRoutineItemIds,
+                                        onCheckedChange = { toggleRoutineItemSelection("block:${block.id}") }
+                                    )
+                                }
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.weight(1f)
@@ -372,6 +592,8 @@ fun EditRoutineScreen(
                                         }
                                     }
 
+                                    DragReorderHandle(blockIndex, blocks.size, ::moveBlock, Modifier.size(32.dp))
+
                                     Spacer(modifier = Modifier.width(8.dp))
 
                                     Column(modifier = Modifier.weight(1f)) {
@@ -416,7 +638,7 @@ fun EditRoutineScreen(
                                     }
                                 }
 
-                                // Repetitions counter and Delete block
+                                // Repetitions counter and block actions
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -465,6 +687,18 @@ fun EditRoutineScreen(
                                         }
                                     }
 
+                                    IconButton(
+                                        onClick = { duplicateBlock(blockIndex) },
+                                        modifier = Modifier.size(30.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentCopy,
+                                            contentDescription = "Duplicar bloque",
+                                            tint = LightTextSecondary,
+                                            modifier = Modifier.size(17.dp)
+                                        )
+                                    }
+
                                     // Delete Block
                                     IconButton(
                                         onClick = {
@@ -501,7 +735,12 @@ fun EditRoutineScreen(
                                             shape = RoundedCornerShape(12.dp),
                                             colors = CardDefaults.cardColors(containerColor = LightSurface),
                                             border = BorderStroke(1.dp, LightBorder),
-                                            modifier = Modifier.fillMaxWidth()
+                                            modifier = Modifier.fillMaxWidth().combinedClickable(
+                                                onClick = {
+                                                    if (selectedRoutineItemIds.isNotEmpty()) toggleRoutineItemSelection("step:${step.id}")
+                                                },
+                                                onLongClick = { toggleRoutineItemSelection("step:${step.id}") }
+                                            )
                                         ) {
                                             Column(modifier = Modifier.padding(10.dp)) {
                                                 Row(
@@ -559,6 +798,12 @@ fun EditRoutineScreen(
                                                     }
 
                                                     // Title and duration
+                                                    if (selectedRoutineItemIds.isNotEmpty()) {
+                                                        Checkbox(
+                                                            checked = "step:${step.id}" in selectedRoutineItemIds,
+                                                            onCheckedChange = { toggleRoutineItemSelection("step:${step.id}") }
+                                                        )
+                                                    }
                                                     Column(modifier = Modifier.weight(1f)) {
                                                         Text(
                                                             text = step.activityTitle,
@@ -576,6 +821,7 @@ fun EditRoutineScreen(
                                                             )
                                                         )
                                                     }
+                                                    DragReorderHandle(stepIdx, block.steps.size, { from, to -> moveStep(blockIndex, from, to) }, Modifier.size(28.dp))
 
                                                     // Delete step from block
                                                     IconButton(
@@ -812,6 +1058,37 @@ fun EditRoutineScreen(
                     }
                 }
             }
+            }
+            if (creationStep == 2) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = LightSurface)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("Revisar rutina", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), modifier = Modifier.clickable { creationStep = 1; reviewScrollTarget = 1 })
+                            Text(title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.clickable { creationStep = 0 })
+                            if (description.isNotBlank()) Text(description, color = LightTextSecondary, modifier = Modifier.clickable { creationStep = 0 })
+                            Text("$totalActivitiesCount actividades programadas • $totalDurationLabel • ${blocks.size} bloques")
+                            blocks.forEachIndexed { blockIndex, block ->
+                                Text(
+                                    text = "${blockIndex + 1}. ${block.title.ifBlank { block.steps.firstOrNull()?.activityTitle ?: "Bloque" }}${if (block.repeatCount > 1) " ×${block.repeatCount}" else ""}",
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.fillMaxWidth().clickable { creationStep = 1; reviewScrollTarget = 2 + (if (errorMessage != null) 1 else 0) + blockIndex }
+                                )
+                                block.steps.forEach { step ->
+                                    Text(
+                                        text = "  • ${step.activityTitle} — ${step.stages.count { it.isEnabled }} etapas activas",
+                                        style = MaterialTheme.typography.bodySmall.copy(color = LightTextSecondary),
+                                        modifier = Modifier.fillMaxWidth().clickable { creationStep = 1; reviewScrollTarget = 2 + (if (errorMessage != null) 1 else 0) + blockIndex }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -830,13 +1107,37 @@ fun EditRoutineScreen(
                 )
             },
             text = {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 400.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(activities) { activity ->
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = activitySearchQuery,
+                        onValueChange = { activitySearchQuery = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("Buscar actividad") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        trailingIcon = {
+                            if (activitySearchQuery.isNotEmpty()) IconButton(onClick = { activitySearchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Limpiar búsqueda")
+                            }
+                        }
+                    )
+                    TextButton(onClick = {
+                        isSelectingActivity = false
+                        isCreatingActivity = true
+                    }) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Crear actividad nueva")
+                    }
+                    if (activities.isEmpty()) {
+                        Text("Todavía no hay actividades. Crea una para añadirla a esta rutina.", color = LightTextSecondary)
+                    } else if (filteredActivities.isEmpty()) {
+                        Text("No se encontraron actividades con ese nombre.", color = LightTextSecondary)
+                    } else LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                    items(filteredActivities) { activity ->
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -884,6 +1185,7 @@ fun EditRoutineScreen(
                             }
                         }
                     }
+                    }
                 }
             },
             confirmButton = {},
@@ -896,5 +1198,60 @@ fun EditRoutineScreen(
                 }
             }
         )
+    }
+
+    if (isCreatingActivity) {
+        Dialog(
+            onDismissRequest = {
+                isCreatingActivity = false
+                isSelectingActivity = true
+            },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = LightBackground) {
+                EditActivityScreen(
+                    viewModel = viewModel,
+                    activityId = null,
+                    onNavigateBack = {
+                        isCreatingActivity = false
+                        isSelectingActivity = true
+                    },
+                    onActivitySaved = { activity ->
+                        addActivityToSelectedBlock(activity)
+                        isCreatingActivity = false
+                    }
+                )
+            }
+        }
+    }
+
+    when (val loadedDraft = draftRead) {
+        is EditorDraftRead.Found -> if (draftPromptVisible) {
+            EditorDraftRecoveryDialog(
+                itemType = "rutina",
+                onContinue = {
+                    loadedDraft.value.let { draft ->
+                        title = draft.title
+                        description = draft.description
+                        isTemplate = draft.isTemplate
+                        blocks = draft.blocks
+                        creationStep = draft.creationStep.coerceIn(0, 2)
+                        history.reset(draft.copy(creationStep = 0))
+                    }
+                    draftPromptVisible = false
+                    draftReadyToPersist = true
+                },
+                onDiscard = {
+                    viewModel.deleteEditorDraft(draftKey)
+                    history.reset(currentDraft.copy(creationStep = 0))
+                    draftPromptVisible = false
+                    draftReadyToPersist = true
+                }
+            )
+        }
+        EditorDraftRead.Corrupt -> if (invalidDraftVisible) {
+            InvalidEditorDraftDialog(onDismiss = { invalidDraftVisible = false })
+        }
+        EditorDraftRead.Missing -> Unit
     }
 }

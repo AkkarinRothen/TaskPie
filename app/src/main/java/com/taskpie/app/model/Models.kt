@@ -161,6 +161,8 @@ data class RoutineItem(
     val steps: List<RoutineStep> = emptyList(),
     val isTemplate: Boolean = false,
     val tags: List<String> = emptyList(),
+    val defaultRepeatCount: Int = 1,
+    val defaultCycleBreakSeconds: Long = 0L,
     val createdAt: Long = System.currentTimeMillis()
 ) {
     val totalDurationSeconds: Long
@@ -195,6 +197,8 @@ data class ProjectItem(
     val routineIds: List<String> = emptyList(),
     val projectRoutines: List<ProjectRoutineItem> = emptyList(),
     val tags: List<String> = emptyList(),
+    val defaultRepeatCount: Int = 1,
+    val defaultCycleBreakSeconds: Long = 0L,
     val createdAt: Long = System.currentTimeMillis()
 )
 

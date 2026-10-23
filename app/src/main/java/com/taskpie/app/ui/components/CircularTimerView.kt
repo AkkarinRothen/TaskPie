@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.taskpie.app.service.TimerState
 import com.taskpie.app.service.TimerStatus
+import com.taskpie.app.ui.theme.AccentAmber
 import com.taskpie.app.ui.theme.AccentCoral
 import com.taskpie.app.ui.theme.LightBorder
 import com.taskpie.app.ui.theme.LightTextSecondary
@@ -39,14 +40,26 @@ fun CircularTimerView(
 ) {
     val currentStage = timerState.currentStage
     val stageColorHex = currentStage?.colorHex ?: "#2563EB"
-    val stageColor = try {
-        Color(android.graphics.Color.parseColor(stageColorHex))
-    } catch (e: Exception) {
-        PrimaryBlue
+    val stageColor = when {
+        timerState.isInCycleBreak -> AccentAmber
+        timerState.status == TimerStatus.PAUSED -> AccentCoral
+        else -> try {
+            Color(android.graphics.Color.parseColor(stageColorHex))
+        } catch (e: Exception) {
+            PrimaryBlue
+        }
+    }
+
+    val targetProgress = if (timerState.isInCycleBreak) {
+        if (timerState.cycleBreakSeconds > 0) {
+            1f - (timerState.cycleBreakRemainingSeconds.toFloat() / timerState.cycleBreakSeconds.toFloat()).coerceIn(0f, 1f)
+        } else 0f
+    } else {
+        1f - timerState.currentStageProgress
     }
 
     val animatedProgress by animateFloatAsState(
-        targetValue = 1f - timerState.currentStageProgress,
+        targetValue = targetProgress,
         animationSpec = tween(durationMillis = 300),
         label = "timer_progress"
     )
@@ -75,7 +88,7 @@ fun CircularTimerView(
 
             // Progress Arc
             drawArc(
-                color = if (timerState.status == TimerStatus.PAUSED) AccentCoral else stageColor,
+                color = stageColor,
                 startAngle = -90f,
                 sweepAngle = 360f * animatedProgress,
                 useCenter = false,
@@ -91,64 +104,106 @@ fun CircularTimerView(
             verticalArrangement = Arrangement.Center,
             modifier = Modifier.padding(horizontal = 24.dp)
         ) {
-            if (timerState.status == TimerStatus.PAUSED) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
+            if (timerState.isInCycleBreak) {
+                Text(
+                    text = "☕ DESCANSO",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = AccentAmber,
+                        letterSpacing = 1.sp
+                    ),
                     modifier = Modifier.padding(bottom = 4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Pause,
-                        contentDescription = "Pausado",
-                        tint = AccentCoral,
-                        modifier = Modifier.size(16.dp)
+                )
+
+                val mins = timerState.cycleBreakRemainingSeconds / 60
+                val secs = timerState.cycleBreakRemainingSeconds % 60
+                Text(
+                    text = String.format("%02d:%02d", mins, secs),
+                    style = MaterialTheme.typography.displayLarge.copy(
+                        fontSize = 44.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = AccentAmber
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "PAUSADO",
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = AccentCoral,
-                            letterSpacing = 1.sp
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = "Siguiente: Ciclo ${timerState.currentCycle + 1} de ${timerState.totalCycles}",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        color = LightTextSecondary,
+                        fontWeight = FontWeight.Medium
+                    )
+                )
+
+                Text(
+                    text = "Tómate un respiro antes de continuar",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = LightTextSecondary,
+                        textAlign = TextAlign.Center
+                    ),
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            } else {
+                if (timerState.status == TimerStatus.PAUSED) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Pause,
+                            contentDescription = "Pausado",
+                            tint = AccentCoral,
+                            modifier = Modifier.size(16.dp)
                         )
-                    )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "PAUSADO",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = AccentCoral,
+                                letterSpacing = 1.sp
+                            )
+                        )
+                    }
                 }
+
+                // Big Countdown Time
+                Text(
+                    text = timerState.formattedRemainingTime(),
+                    style = MaterialTheme.typography.displayLarge.copy(
+                        fontSize = 44.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Stage Index Badge
+                val totalStages = timerState.currentActivity?.stages?.size ?: 1
+                val currentStageNum = timerState.currentStageIndex + 1
+                Text(
+                    text = "Etapa $currentStageNum de $totalStages",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        color = LightTextSecondary,
+                        fontWeight = FontWeight.Medium
+                    )
+                )
+
+                // Current Stage Name
+                Text(
+                    text = currentStage?.name ?: "",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    ),
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
             }
-
-            // Big Countdown Time
-            Text(
-                text = timerState.formattedRemainingTime(),
-                style = MaterialTheme.typography.displayLarge.copy(
-                    fontSize = 44.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // Stage Index Badge
-            val totalStages = timerState.currentActivity?.stages?.size ?: 1
-            val currentStageNum = timerState.currentStageIndex + 1
-            Text(
-                text = "Etapa $currentStageNum de $totalStages",
-                style = MaterialTheme.typography.labelMedium.copy(
-                    color = LightTextSecondary,
-                    fontWeight = FontWeight.Medium
-                )
-            )
-
-            // Current Stage Name
-            Text(
-                text = currentStage?.name ?: "",
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onBackground
-                ),
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                modifier = Modifier.padding(top = 4.dp)
-            )
         }
     }
 }

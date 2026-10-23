@@ -31,7 +31,12 @@ data class TimerState(
     val isMateModeEnabled: Boolean = false,
     val mateIntervalMinutes: Int = 8,
     val mateRemainingSeconds: Long = 8 * 60L,
-    val lastMateAlertTimeMillis: Long = 0L
+    val lastMateAlertTimeMillis: Long = 0L,
+    val totalCycles: Int = 1,
+    val currentCycle: Int = 1,
+    val cycleBreakSeconds: Long = 0L,
+    val isInCycleBreak: Boolean = false,
+    val cycleBreakRemainingSeconds: Long = 0L
 ) {
     val currentActivity: RoutineStep?
         get() = routineSteps.getOrNull(currentActivityIndex)

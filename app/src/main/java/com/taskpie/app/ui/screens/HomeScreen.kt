@@ -31,11 +31,13 @@ import com.taskpie.app.service.TimerStatus
 import com.taskpie.app.ui.components.*
 import com.taskpie.app.ui.theme.*
 import com.taskpie.app.ui.viewmodel.TaskPieViewModel
+import com.taskpie.app.ui.navigation.HomeLibraryState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(
+internal fun HomeScreen(
     viewModel: TaskPieViewModel,
+    libraryState: HomeLibraryState,
     onNavigateToActiveSession: () -> Unit,
     onNavigateToCreateActivity: () -> Unit,
     onNavigateToEditActivity: (activityId: String) -> Unit,
@@ -44,7 +46,7 @@ fun HomeScreen(
     onNavigateToCreateProject: () -> Unit,
     onNavigateToEditProject: (projectId: String) -> Unit
 ) {
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by libraryState.selectedTab
     val tabs = listOf("Actividades", "Rutinas", "Proyectos", "Historial")
 
     val folders by viewModel.folders.collectAsState()
@@ -57,11 +59,11 @@ fun HomeScreen(
     var activityToStart by remember { mutableStateOf<ActivityItem?>(null) }
     var routineToStart by remember { mutableStateOf<RoutineItem?>(null) }
     var projectToStart by remember { mutableStateOf<ProjectItem?>(null) }
-    var selectedCategoryFilter by remember { mutableStateOf("Todas") }
+    var selectedCategoryFilter by libraryState.categoryFilter
 
     // Search state
-    var isSearchActive by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
+    var isSearchActive by libraryState.searchActive
+    var searchQuery by libraryState.searchQuery
 
     // Folder Dialog state
     var showFolderDialog by remember { mutableStateOf(false) }
@@ -103,9 +105,14 @@ fun HomeScreen(
     }
 
     // Selected items for Master-Detail tablet preview
-    var selectedActivityId by remember { mutableStateOf<String?>(null) }
-    var selectedRoutineId by remember { mutableStateOf<String?>(null) }
-    var selectedProjectId by remember { mutableStateOf<String?>(null) }
+    var selectedActivityId by libraryState.selectedActivityId
+    var selectedRoutineId by libraryState.selectedRoutineId
+    var selectedProjectId by libraryState.selectedProjectId
+
+    val activityListState = libraryState.activityListState
+    val routineListState = libraryState.routineListState
+    val projectListState = libraryState.projectListState
+    val historyListState = libraryState.historyListState
 
     var showStopConfirmation by remember { mutableStateOf(false) }
 
@@ -385,6 +392,7 @@ fun HomeScreen(
                                         }
                                     } else {
                                         LazyColumn(
+                                            state = activityListState,
                                             contentPadding = PaddingValues(bottom = 80.dp),
                                             verticalArrangement = Arrangement.spacedBy(12.dp),
                                             modifier = Modifier.fillMaxSize()
@@ -423,6 +431,7 @@ fun HomeScreen(
                                         }
                                     } else {
                                         LazyColumn(
+                                            state = routineListState,
                                             contentPadding = PaddingValues(bottom = 80.dp),
                                             verticalArrangement = Arrangement.spacedBy(12.dp),
                                             modifier = Modifier.fillMaxSize()
@@ -461,6 +470,7 @@ fun HomeScreen(
                                         }
                                     } else {
                                         LazyColumn(
+                                            state = projectListState,
                                             contentPadding = PaddingValues(bottom = 80.dp),
                                             verticalArrangement = Arrangement.spacedBy(12.dp),
                                             modifier = Modifier.fillMaxSize()
@@ -492,6 +502,7 @@ fun HomeScreen(
                                         )
                                     } else {
                                         LazyColumn(
+                                            state = historyListState,
                                             contentPadding = PaddingValues(bottom = 80.dp),
                                             verticalArrangement = Arrangement.spacedBy(10.dp),
                                             modifier = Modifier.fillMaxSize()
@@ -681,6 +692,7 @@ fun HomeScreen(
                                 }
                             } else {
                                 LazyColumn(
+                                    state = activityListState,
                                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 80.dp),
                                     verticalArrangement = Arrangement.spacedBy(12.dp),
                                     modifier = Modifier.fillMaxSize()
@@ -716,6 +728,7 @@ fun HomeScreen(
                                 }
                             } else {
                                 LazyColumn(
+                                    state = routineListState,
                                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 80.dp),
                                     verticalArrangement = Arrangement.spacedBy(12.dp),
                                     modifier = Modifier.fillMaxSize()
@@ -751,6 +764,7 @@ fun HomeScreen(
                                 }
                             } else {
                                 LazyColumn(
+                                    state = projectListState,
                                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 80.dp),
                                     verticalArrangement = Arrangement.spacedBy(12.dp),
                                     modifier = Modifier.fillMaxSize()
@@ -779,6 +793,7 @@ fun HomeScreen(
                                 )
                             } else {
                                 LazyColumn(
+                                    state = historyListState,
                                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 80.dp),
                                     verticalArrangement = Arrangement.spacedBy(10.dp),
                                     modifier = Modifier.fillMaxSize()
@@ -805,8 +820,8 @@ fun HomeScreen(
             totalDurationFormatted = activity.formattedTotalDuration(),
             initialVoiceEnabled = viewModel.getVoiceEnabledPreference(),
             onDismiss = { activityToStart = null },
-            onStart = { customName, voiceEnabled ->
-                viewModel.startActivitySession(activity, customName, voiceEnabled)
+            onStart = { customName, voiceEnabled, repeatCount, cycleBreakSeconds ->
+                viewModel.startActivitySession(activity, customName, voiceEnabled, repeatCount, cycleBreakSeconds)
                 activityToStart = null
             }
         )
@@ -818,9 +833,11 @@ fun HomeScreen(
             defaultTitle = routine.title,
             totalDurationFormatted = routine.formattedTotalDuration(),
             initialVoiceEnabled = viewModel.getVoiceEnabledPreference(),
+            initialRepeatCount = routine.defaultRepeatCount,
+            initialCycleBreakSeconds = routine.defaultCycleBreakSeconds,
             onDismiss = { routineToStart = null },
-            onStart = { customName, voiceEnabled ->
-                viewModel.startRoutineSession(routine, customName, voiceEnabled)
+            onStart = { customName, voiceEnabled, repeatCount, cycleBreakSeconds ->
+                viewModel.startRoutineSession(routine, customName, voiceEnabled, repeatCount, cycleBreakSeconds)
                 routineToStart = null
             }
         )
@@ -836,9 +853,11 @@ fun HomeScreen(
             defaultTitle = project.title,
             totalDurationFormatted = "${mins}m",
             initialVoiceEnabled = viewModel.getVoiceEnabledPreference(),
+            initialRepeatCount = project.defaultRepeatCount,
+            initialCycleBreakSeconds = project.defaultCycleBreakSeconds,
             onDismiss = { projectToStart = null },
-            onStart = { customName, voiceEnabled ->
-                viewModel.startProjectSession(project, customName, voiceEnabled)
+            onStart = { customName, voiceEnabled, repeatCount, cycleBreakSeconds ->
+                viewModel.startProjectSession(project, customName, voiceEnabled, repeatCount, cycleBreakSeconds)
                 projectToStart = null
             }
         )

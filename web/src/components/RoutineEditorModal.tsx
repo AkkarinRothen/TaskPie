@@ -47,6 +47,7 @@ export const RoutineEditorModal: React.FC<RoutineEditorModalProps> = ({
 
   // Estados de interfaz y acordeones
   const [expandedStepId, setExpandedStepId] = useState<string | null>(null);
+  const [creationStep, setCreationStep] = useState<1 | 2>(initialRoutine ? 2 : 1);
   const [isInlineActivityModalOpen, setIsInlineActivityModalOpen] = useState(false);
   const [draggedBlockIndex, setDraggedBlockIndex] = useState<number | null>(null);
   const [draggedStepPos, setDraggedStepPos] = useState<{ blockIdx: number; stepIdx: number } | null>(null);
@@ -368,8 +369,17 @@ export const RoutineEditorModal: React.FC<RoutineEditorModalProps> = ({
                 {initialRoutine ? 'Editar Rutina' : 'Nueva Rutina'}
               </h3>
               <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
-                Organiza secuencias de actividades, personaliza etapas por paso o crea bloques repetitivos
+                {creationStep === 1
+                  ? 'Define el nombre y el propósito de tu rutina.'
+                  : 'Añade actividades, ordénalas y revisa la duración total.'}
               </p>
+            </div>
+            <div aria-label="Pasos de creación" style={{ display: 'flex', gap: 8, marginLeft: 'auto', marginRight: 12 }}>
+              {[{ step: 1, label: 'Detalles' }, { step: 2, label: 'Secuencia' }].map(({ step, label }) => (
+                <span key={step} style={{ padding: '5px 10px', borderRadius: 20, fontSize: '0.75rem', fontWeight: 700, color: creationStep === step ? '#fff' : 'var(--text-muted)', background: creationStep === step ? 'var(--accent-primary)' : 'var(--bg-tertiary)' }}>
+                  {step}. {label}
+                </span>
+              ))}
             </div>
             <button onClick={onClose} className="btn-ghost btn-icon">
               <X size={20} />
@@ -386,6 +396,7 @@ export const RoutineEditorModal: React.FC<RoutineEditorModalProps> = ({
               gap: '20px'
             }}
           >
+            <div style={{ display: creationStep === 1 ? 'flex' : 'none', flexDirection: 'column', gap: 20 }}>
             <div>
               <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
                 Título de la Rutina *
@@ -426,8 +437,10 @@ export const RoutineEditorModal: React.FC<RoutineEditorModalProps> = ({
                 style={{ marginTop: '6px', resize: 'none' }}
               />
             </div>
+            </div>
 
             {/* Selector de añadir actividades o bloques + botón de crear inline */}
+            <div style={{ display: creationStep === 2 ? 'flex' : 'none', flexDirection: 'column', gap: 20 }}>
             <div
               style={{
                 background: 'var(--bg-tertiary)',
@@ -1016,6 +1029,7 @@ export const RoutineEditorModal: React.FC<RoutineEditorModalProps> = ({
                 })}
               </div>
             )}
+            </div>
           </div>
 
           {/* Modal Footer */}
@@ -1034,10 +1048,21 @@ export const RoutineEditorModal: React.FC<RoutineEditorModalProps> = ({
             <button type="button" onClick={onClose} className="btn btn-secondary">
               Cancelar
             </button>
-            <button type="button" onClick={handleSave} className="btn btn-primary" style={{ gap: '6px' }}>
+            {creationStep === 2 && <button type="button" onClick={() => setCreationStep(1)} className="btn btn-secondary">
+              Volver
+            </button>}
+            {creationStep === 1 ? <button type="button" onClick={() => {
+              if (!title.trim()) {
+                alert('Por favor ingresa un título para la rutina.');
+                return;
+              }
+              setCreationStep(2);
+            }} className="btn btn-primary">
+              Siguiente: secuencia
+            </button> : <button type="button" onClick={handleSave} className="btn btn-primary" style={{ gap: '6px' }}>
               <Save size={16} />
               <span>Guardar Rutina</span>
-            </button>
+            </button>}
           </div>
         </div>
       </div>

@@ -1,10 +1,14 @@
 package com.taskpie.app.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,24 +27,61 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.unit.sp
 import com.taskpie.app.model.ActivityItem
+import com.taskpie.app.model.BuiltInTemplates
 import com.taskpie.app.model.FolderItem
 import com.taskpie.app.model.Stage
+import com.taskpie.app.data.local.ActivityEditorDraft
+import com.taskpie.app.data.local.EditorDraftRead
 import com.taskpie.app.ui.components.FolderDialog
+import com.taskpie.app.ui.components.CreationStepIndicator
+import com.taskpie.app.ui.components.EditorDraftRecoveryDialog
+import com.taskpie.app.ui.components.InvalidEditorDraftDialog
 import com.taskpie.app.ui.components.StageEditorDialog
+import com.taskpie.app.ui.components.EditorUndoHistory
+import com.taskpie.app.ui.components.DragReorderHandle
 import com.taskpie.app.ui.theme.*
 import com.taskpie.app.ui.viewmodel.TaskPieViewModel
 import java.util.UUID
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
+import androidx.compose.runtime.snapshotFlow
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun EditActivityScreen(
     viewModel: TaskPieViewModel,
     activityId: String?,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onActivitySaved: ((ActivityItem) -> Unit)? = null
 ) {
     val activities by viewModel.activities.collectAsState()
     val existingActivity = remember(activityId, activities) {
         activities.find { it.id == activityId }
+    }
+
+    val draftKey = remember(activityId) { viewModel.editorDraftKey("activity", activityId) }
+    val draftRead = remember(draftKey) { viewModel.readActivityDraft(draftKey) }
+    var draftPromptVisible by remember(draftKey) {
+        mutableStateOf(draftRead is EditorDraftRead.Found)
+    }
+    var draftReadyToPersist by remember(draftKey) {
+        mutableStateOf(draftRead is EditorDraftRead.Missing)
+    }
+    var invalidDraftVisible by remember(draftKey) { mutableStateOf(false) }
+
+    val baseDraft = remember(existingActivity) {
+        existingActivity?.let {
+            ActivityEditorDraft(
+                title = it.title,
+                description = it.description,
+                category = it.category,
+                isTemplate = it.isTemplate,
+                stages = it.stages,
+                hasStartedSetup = true,
+                creationStep = 1
+            )
+        }
     }
 
     var title by remember(existingActivity) { mutableStateOf(existingActivity?.title ?: "") }
@@ -48,13 +89,85 @@ fun EditActivityScreen(
     var category by remember(existingActivity) { mutableStateOf(existingActivity?.category ?: "General") }
     var isTemplate by remember(existingActivity) { mutableStateOf(existingActivity?.isTemplate ?: false) }
     var stages by remember(existingActivity) { mutableStateOf(existingActivity?.stages ?: emptyList()) }
+    var hasStartedSetup by remember(activityId) { mutableStateOf(activityId != null) }
+    var showTemplatePicker by remember { mutableStateOf(false) }
+    var creationStep by remember(activityId) { mutableIntStateOf(if (activityId != null) 1 else 0) }
+    val editorListState = rememberLazyListState()
+    var reviewScrollTarget by remember { mutableIntStateOf(-1) }
 
     var stageBeingEdited by remember { mutableStateOf<Pair<Int, Stage>?>(null) }
+    var selectedStageIds by remember { mutableStateOf(setOf<String>()) }
     var isCreatingNewStage by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val folders by viewModel.folders.collectAsState()
     var showFolderDialog by remember { mutableStateOf(false) }
+    val builtInTemplateIds = remember { BuiltInTemplates.DEFAULT_ACTIVITIES.map { it.id }.toSet() }
+    val availableTemplates = remember(activities) {
+        BuiltInTemplates.DEFAULT_ACTIVITIES.map { it to true } +
+            activities.filter { it.isTemplate && it.id !in builtInTemplateIds }.map { it to false }
+    }
+
+    LaunchedEffect(draftKey, draftRead) {
+        if (draftRead is EditorDraftRead.Corrupt) {
+            viewModel.deleteEditorDraft(draftKey)
+            invalidDraftVisible = true
+            draftReadyToPersist = true
+        }
+    }
+
+    val currentDraft = ActivityEditorDraft(title, description, category, isTemplate, stages, hasStartedSetup, creationStep)
+    val history = remember(draftKey) { EditorUndoHistory(currentDraft.copy(creationStep = 0)) }
+    LaunchedEffect(draftKey, draftReadyToPersist, draftPromptVisible) {
+        if (!draftReadyToPersist || draftPromptVisible) return@LaunchedEffect
+        snapshotFlow { ActivityEditorDraft(title, description, category, isTemplate, stages, hasStartedSetup, 0) }
+            .drop(1)
+            .collectLatest { snapshot ->
+                delay(500)
+                history.record(snapshot)
+            }
+    }
+    fun restoreHistory(snapshot: ActivityEditorDraft) {
+        title = snapshot.title
+        description = snapshot.description
+        category = snapshot.category
+        isTemplate = snapshot.isTemplate
+        stages = snapshot.stages
+        hasStartedSetup = snapshot.hasStartedSetup
+    }
+    fun moveStage(from: Int, to: Int) {
+        if (from !in stages.indices || to !in stages.indices) return
+        val reordered = stages.toMutableList()
+        reordered.add(to, reordered.removeAt(from))
+        stages = reordered
+    }
+    fun toggleStageSelection(id: String) {
+        selectedStageIds = if (id in selectedStageIds) selectedStageIds - id else selectedStageIds + id
+    }
+    LaunchedEffect(creationStep, reviewScrollTarget, errorMessage) {
+        if (creationStep == 1 && reviewScrollTarget >= 0) {
+            delay(100)
+            editorListState.animateScrollToItem(reviewScrollTarget.coerceAtMost(editorListState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0))
+            reviewScrollTarget = -1
+        }
+    }
+    val hasDraftChanges = if (activityId == null) {
+        hasStartedSetup || title.isNotBlank() || description.isNotBlank() || stages.isNotEmpty() || isTemplate
+    } else {
+        baseDraft != null && currentDraft != baseDraft
+    }
+
+    LaunchedEffect(draftKey, title, description, category, isTemplate, stages, hasStartedSetup, creationStep, draftReadyToPersist, hasDraftChanges, existingActivity) {
+        if (!draftReadyToPersist || (activityId != null && existingActivity == null)) return@LaunchedEffect
+        delay(700)
+        if (hasDraftChanges) viewModel.saveEditorDraft(draftKey, currentDraft)
+        else viewModel.deleteEditorDraft(draftKey)
+    }
+
+    BackHandler(enabled = hasStartedSetup && creationStep > 0) {
+        creationStep -= 1
+        errorMessage = null
+    }
 
     Scaffold(
         topBar = {
@@ -66,38 +179,80 @@ fun EditActivityScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                    IconButton(onClick = {
+                        if (hasStartedSetup && creationStep > 0) {
+                            creationStep -= 1
+                            errorMessage = null
+                        } else {
+                            onNavigateBack()
+                        }
+                    }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = if (hasStartedSetup && creationStep > 0) "Paso anterior" else "Volver"
+                        )
                     }
                 },
                 actions = {
-                    Button(
+                    IconButton(onClick = { history.undo()?.let(::restoreHistory) }, enabled = history.canUndo) {
+                        Icon(Icons.Default.Undo, contentDescription = "Deshacer")
+                    }
+                    IconButton(onClick = { history.redo()?.let(::restoreHistory) }, enabled = history.canRedo) {
+                        Icon(Icons.Default.Redo, contentDescription = "Rehacer")
+                    }
+                    if (hasStartedSetup || existingActivity != null) Button(
                         onClick = {
-                            if (title.isBlank()) {
-                                errorMessage = "Por favor ingresa un título"
-                                return@Button
-                            }
-                            if (stages.isEmpty()) {
-                                errorMessage = "Agrega al menos una etapa con duración"
-                                return@Button
-                            }
+                            when (creationStep) {
+                                0 -> if (title.isBlank()) {
+                                    errorMessage = "Por favor ingresa un título"
+                                } else {
+                                    errorMessage = null
+                                    creationStep = 1
+                                }
+                                1 -> if (stages.isEmpty()) {
+                                    errorMessage = "Agrega al menos una etapa con duración"
+                                } else {
+                                    errorMessage = null
+                                    creationStep = 2
+                                }
+                                else -> {
+                                    if (title.isBlank()) {
+                                        creationStep = 0
+                                        errorMessage = "Por favor ingresa un título"
+                                        return@Button
+                                    }
+                                    if (stages.isEmpty()) {
+                                        creationStep = 1
+                                        errorMessage = "Agrega al menos una etapa con duración"
+                                        return@Button
+                                    }
 
-                            val item = ActivityItem(
-                                id = existingActivity?.id ?: UUID.randomUUID().toString(),
-                                title = title.trim(),
-                                description = description.trim(),
-                                category = category.trim().ifBlank { "General" },
-                                isTemplate = isTemplate,
-                                stages = stages,
-                                createdAt = existingActivity?.createdAt ?: System.currentTimeMillis()
-                            )
-                            viewModel.saveActivity(item)
-                            onNavigateBack()
+                                    val item = ActivityItem(
+                                        id = existingActivity?.id ?: UUID.randomUUID().toString(),
+                                        title = title.trim(),
+                                        description = description.trim(),
+                                        category = category.trim().ifBlank { "General" },
+                                        isTemplate = isTemplate,
+                                        stages = stages,
+                                        createdAt = existingActivity?.createdAt ?: System.currentTimeMillis()
+                                    )
+                                    viewModel.deleteEditorDraft(draftKey)
+                                    viewModel.saveActivity(item)
+                                    onActivitySaved?.invoke(item) ?: onNavigateBack()
+                                }
+                            }
                         },
                         shape = RoundedCornerShape(10.dp),
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                     ) {
-                        Text("Guardar", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = when (creationStep) {
+                                0 -> "Siguiente"
+                                1 -> "Revisar"
+                                else -> "Guardar"
+                            },
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = LightBackground)
@@ -106,12 +261,67 @@ fun EditActivityScreen(
         containerColor = LightBackground
     ) { paddingValues ->
         LazyColumn(
+            state = editorListState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            if (existingActivity == null && !hasStartedSetup) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = "¿Cómo quieres empezar?",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        )
+                        Text(
+                            text = "Puedes crear una actividad desde cero o partir de una plantilla editable.",
+                            style = MaterialTheme.typography.bodyMedium.copy(color = LightTextSecondary)
+                        )
+                        Card(
+                            modifier = Modifier.fillMaxWidth().clickable { hasStartedSetup = true },
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = LightSurface),
+                            border = CardDefaults.outlinedCardBorder()
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(18.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                Icon(Icons.Default.EditNote, contentDescription = null, tint = PrimaryBlue)
+                                Column {
+                                    Text("Empezar desde cero", fontWeight = FontWeight.SemiBold)
+                                    Text("Define tus propias etapas y tiempos", style = MaterialTheme.typography.bodySmall.copy(color = LightTextSecondary))
+                                }
+                            }
+                        }
+                        Card(
+                            modifier = Modifier.fillMaxWidth().clickable { showTemplatePicker = true },
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = LightSurface),
+                            border = CardDefaults.outlinedCardBorder()
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(18.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = PrimaryBlue)
+                                Column {
+                                    Text("Usar una plantilla", fontWeight = FontWeight.SemiBold)
+                                    Text("Empieza con etapas y tiempos ya preparados", style = MaterialTheme.typography.bodySmall.copy(color = LightTextSecondary))
+                                }
+                                Spacer(Modifier.weight(1f))
+                                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = LightTextSecondary)
+                            }
+                        }
+                    }
+                }
+            } else {
+            item { CreationStepIndicator(creationStep) }
+            if (creationStep == 0) {
             // General Info Card
             item {
                 Card(
@@ -243,6 +453,7 @@ fun EditActivityScreen(
                     }
                 }
             }
+            }
 
             // Error banner if any
             if (errorMessage != null) {
@@ -256,6 +467,7 @@ fun EditActivityScreen(
                 }
             }
 
+            if (creationStep == 1) {
             // Stages Header
             item {
                 Row(
@@ -288,6 +500,14 @@ fun EditActivityScreen(
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Agregar Etapa", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                if (selectedStageIds.isNotEmpty()) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = {
+                            stages = stages.filterNot { it.id in selectedStageIds }
+                            selectedStageIds = emptySet()
+                        }) { Text("Quitar ${selectedStageIds.size} seleccionadas") }
                     }
                 }
             }
@@ -393,6 +613,7 @@ fun EditActivityScreen(
                                     )
                                 }
                             }
+                            DragReorderHandle(index, stages.size, ::moveStage, Modifier.size(32.dp))
 
                             Spacer(modifier = Modifier.width(8.dp))
 
@@ -410,7 +631,13 @@ fun EditActivityScreen(
                             Column(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .clickable { stageBeingEdited = Pair(index, stage) }
+                                    .combinedClickable(
+                                        onClick = {
+                                            if (selectedStageIds.isNotEmpty()) toggleStageSelection(stage.id)
+                                            else stageBeingEdited = Pair(index, stage)
+                                        },
+                                        onLongClick = { toggleStageSelection(stage.id) }
+                                    )
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
@@ -452,23 +679,21 @@ fun EditActivityScreen(
 
                             // Actions: Edit, Duplicate, Delete
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                IconButton(
-                                    onClick = { stageBeingEdited = Pair(index, stage) },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Edit,
-                                        contentDescription = "Editar",
-                                        tint = LightTextSecondary,
-                                        modifier = Modifier.size(16.dp)
+                                if (selectedStageIds.isNotEmpty()) {
+                                    Checkbox(
+                                        checked = stage.id in selectedStageIds,
+                                        onCheckedChange = { toggleStageSelection(stage.id) }
                                     )
+                                } else IconButton(
+                                    onClick = { stageBeingEdited = Pair(index, stage) }, modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = "Editar", tint = LightTextSecondary, modifier = Modifier.size(16.dp))
                                 }
 
                                 IconButton(
                                     onClick = {
                                         val copy = stage.copy(
-                                            id = UUID.randomUUID().toString(),
-                                            name = "${stage.name} (Copia)"
+                                            id = UUID.randomUUID().toString()
                                         )
                                         val list = stages.toMutableList()
                                         list.add(index + 1, copy)
@@ -503,6 +728,34 @@ fun EditActivityScreen(
                         }
                     }
                 }
+            }
+            }
+            if (creationStep == 2) {
+                item {
+                    val totalSeconds = stages.filter { it.isEnabled }.sumOf { it.durationSeconds }
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = LightSurface)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("Revisar actividad", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), modifier = Modifier.clickable { creationStep = 1; reviewScrollTarget = 1 })
+                            Text(title.ifBlank { "Sin título" }, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.clickable { creationStep = 0 })
+                            if (description.isNotBlank()) Text(description, color = LightTextSecondary, modifier = Modifier.clickable { creationStep = 0 })
+                            val mins = totalSeconds / 60
+                            val secs = totalSeconds % 60
+                            val duration = if (secs > 0) "${mins}m ${secs}s" else "${mins}m"
+                            Text("${category.ifBlank { "General" }} • ${stages.size} etapas • $duration")
+                            stages.forEachIndexed { index, stage ->
+                                Row(modifier = Modifier.fillMaxWidth().clickable { creationStep = 1; reviewScrollTarget = 2 + (if (errorMessage != null) 1 else 0) + index }, horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("${index + 1}. ${stage.name}${if (stage.isOptional) " (opcional)" else ""}", modifier = Modifier.weight(1f))
+                                    Text(stage.formattedDuration(), color = LightTextSecondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             }
         }
     }
@@ -543,5 +796,91 @@ fun EditActivityScreen(
                 showFolderDialog = false
             }
         )
+    }
+
+    if (showTemplatePicker) {
+        AlertDialog(
+            onDismissRequest = { showTemplatePicker = false },
+            shape = RoundedCornerShape(20.dp),
+            title = { Text("Elegir plantilla", fontWeight = FontWeight.Bold) },
+            text = {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(availableTemplates, key = { it.first.id }) { (template, isBuiltIn) ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                title = template.title
+                                description = template.description
+                                category = template.category
+                                stages = template.stages.map { it.copy(id = UUID.randomUUID().toString()) }
+                                isTemplate = false
+                                errorMessage = null
+                                hasStartedSetup = true
+                                showTemplatePicker = false
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = LightSurfaceVariant)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(template.title, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        text = if (isBuiltIn) "Integrada" else "Tu plantilla",
+                                        style = MaterialTheme.typography.labelSmall.copy(color = PrimaryBlue)
+                                    )
+                                }
+                                Text(
+                                    text = template.description.ifBlank { template.category },
+                                    style = MaterialTheme.typography.bodySmall.copy(color = LightTextSecondary),
+                                    maxLines = 2
+                                )
+                                Text(
+                                    text = "${template.formattedTotalDuration()} • ${template.stages.size} etapas",
+                                    style = MaterialTheme.typography.labelSmall.copy(color = LightTextSecondary)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showTemplatePicker = false }) { Text("Cancelar") }
+            }
+        )
+    }
+
+    when (val loadedDraft = draftRead) {
+        is EditorDraftRead.Found -> if (draftPromptVisible) {
+            EditorDraftRecoveryDialog(
+                itemType = "actividad",
+                onContinue = {
+                    loadedDraft.value.let { draft ->
+                        title = draft.title
+                        description = draft.description
+                        category = draft.category
+                        isTemplate = draft.isTemplate
+                        stages = draft.stages
+                        hasStartedSetup = draft.hasStartedSetup
+                        creationStep = draft.creationStep.coerceIn(0, 2)
+                            history.reset(draft.copy(creationStep = 0))
+                    }
+                    draftPromptVisible = false
+                    draftReadyToPersist = true
+                },
+                onDiscard = {
+                    viewModel.deleteEditorDraft(draftKey)
+                    history.reset(currentDraft.copy(creationStep = 0))
+                    draftPromptVisible = false
+                    draftReadyToPersist = true
+                }
+            )
+        }
+        EditorDraftRead.Corrupt -> if (invalidDraftVisible) {
+            InvalidEditorDraftDialog(onDismiss = { invalidDraftVisible = false })
+        }
+        EditorDraftRead.Missing -> Unit
     }
 }

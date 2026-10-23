@@ -20,9 +20,9 @@ import type {
 
 interface TimerContextValue {
   timerState: TimerState;
-  startSingleActivity: (activity: ActivityItem, customSessionName?: string) => void;
-  startRoutine: (routine: RoutineItem) => void;
-  startProject: (project: ProjectItem, activities: ActivityItem[], routines: RoutineItem[]) => void;
+  startSingleActivity: (activity: ActivityItem, customSessionName?: string, repeatCount?: number, cycleBreakSeconds?: number) => void;
+  startRoutine: (routine: RoutineItem, customSessionName?: string, repeatCount?: number, cycleBreakSeconds?: number) => void;
+  startProject: (project: ProjectItem, activities: ActivityItem[], routines: RoutineItem[], customSessionName?: string, repeatCount?: number, cycleBreakSeconds?: number) => void;
   pause: () => void;
   resume: () => void;
   skipCurrentStage: () => void;
@@ -62,7 +62,12 @@ const initialTimerState: TimerState = {
   isMateModeEnabled: localStorage.getItem('taskpie_mate_enabled') === 'true',
   mateIntervalMinutes: parseInt(localStorage.getItem('taskpie_mate_interval') || '8', 10),
   mateRemainingSeconds: parseInt(localStorage.getItem('taskpie_mate_interval') || '8', 10) * 60,
-  lastMateAlertTime: 0
+  lastMateAlertTime: 0,
+  totalCycles: 1,
+  currentCycle: 1,
+  cycleBreakSeconds: 0,
+  isInCycleBreak: false,
+  cycleBreakRemainingSeconds: 0
 };
 
 const TimerContext = createContext<TimerContextValue | null>(null);
@@ -185,6 +190,55 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const handleTick = () => {
     const current = stateRef.current;
     if (current.status !== 'RUNNING') return;
+
+    // Si estamos en descanso entre ciclos
+    if (current.isInCycleBreak) {
+      const breakRemaining = current.remainingSeconds - 1;
+      const totalElapsed = current.totalElapsedSecondsSession + 1;
+
+      if (breakRemaining <= 0) {
+        // Fin del descanso entre ciclos! Iniciar siguiente ciclo
+        const nextCycle = current.currentCycle + 1;
+        const firstStep = current.routineSteps[0];
+        const firstStage = firstStep?.stages[0];
+
+        if (firstStage) {
+          setState((prev) => ({
+            ...prev,
+            isInCycleBreak: false,
+            currentCycle: nextCycle,
+            currentActivityIndex: 0,
+            currentStageIndex: 0,
+            remainingSeconds: firstStage.durationSeconds,
+            elapsedSecondsInCurrentStage: 0,
+            totalElapsedSecondsSession: totalElapsed
+          }));
+
+          if (current.isSoundEnabled) {
+            AudioService.playStageTransition();
+          }
+          if (current.isVoiceEnabled) {
+            SpeechService.speak(`Descanso finalizado. Iniciando Ciclo ${nextCycle} de ${current.totalCycles}. Iniciando: ${firstStage.name}`);
+          }
+          NotificationService.notify(`Iniciando Ciclo ${nextCycle} de ${current.totalCycles}`, {
+            body: `Etapa: ${firstStage.name}`
+          });
+        } else {
+          finishSession();
+        }
+      } else {
+        setState((prev) => ({
+          ...prev,
+          remainingSeconds: breakRemaining,
+          totalElapsedSecondsSession: totalElapsed
+        }));
+
+        if (breakRemaining === 10 && current.isVoiceEnabled) {
+          SpeechService.speak('10 segundos de descanso restantes');
+        }
+      }
+      return;
+    }
 
     const remaining = current.remainingSeconds - 1;
     const elapsedStage = current.elapsedSecondsInCurrentStage + 1;
@@ -353,8 +407,66 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           finishSession();
         }
       } else {
-        // Toda la sesión finalizó con éxito
-        finishSession();
+        // Fin de toda la secuencia de este ciclo!
+        const currentCycle = current.currentCycle;
+        const totalCycles = current.totalCycles;
+
+        if (currentCycle < totalCycles) {
+          const nextCycle = currentCycle + 1;
+          if (current.cycleBreakSeconds > 0) {
+            // Entrar en descanso entre ciclos
+            setState((prev) => ({
+              ...prev,
+              isInCycleBreak: true,
+              remainingSeconds: current.cycleBreakSeconds,
+              elapsedSecondsInCurrentStage: 0
+            }));
+
+            if (current.isVoiceEnabled) {
+              const mins = Math.floor(current.cycleBreakSeconds / 60);
+              const secs = current.cycleBreakSeconds % 60;
+              const timeStr = mins > 0 ? `${mins} minutos` : `${secs} segundos`;
+              setTimeout(() => {
+                SpeechService.speak(`Ciclo ${currentCycle} completado. Descanso de ${timeStr}.`);
+              }, 600);
+            }
+
+            NotificationService.notify(`Ciclo ${currentCycle} completado`, {
+              body: `Descanso de ${Math.round(current.cycleBreakSeconds / 60)} min antes del Ciclo ${nextCycle}`
+            });
+          } else {
+            // Reiniciar inmediatamente al primer paso del siguiente ciclo
+            const firstStep = current.routineSteps[0];
+            const firstStage = firstStep?.stages[0];
+
+            if (firstStage) {
+              setState((prev) => ({
+                ...prev,
+                currentCycle: nextCycle,
+                currentActivityIndex: 0,
+                currentStageIndex: 0,
+                remainingSeconds: firstStage.durationSeconds,
+                elapsedSecondsInCurrentStage: 0,
+                isInCycleBreak: false
+              }));
+
+              if (current.isVoiceEnabled) {
+                setTimeout(() => {
+                  SpeechService.speak(`Ciclo ${currentCycle} completado. Iniciando Ciclo ${nextCycle} de ${totalCycles}. Iniciando: ${firstStage.name}`);
+                }, 600);
+              }
+
+              NotificationService.notify(`Iniciando Ciclo ${nextCycle} de ${totalCycles}`, {
+                body: `Etapa: ${firstStage.name}`
+              });
+            } else {
+              finishSession();
+            }
+          }
+        } else {
+          // Toda la sesión finalizó con éxito
+          finishSession();
+        }
       }
     }
   };
@@ -372,7 +484,11 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     if (current.isVoiceEnabled) {
       setTimeout(() => {
-        SpeechService.speak('Sesión completada');
+        if (current.totalCycles > 1) {
+          SpeechService.speak(`¡Sesión completada! Has terminado todos los ${current.totalCycles} ciclos.`);
+        } else {
+          SpeechService.speak('Sesión completada');
+        }
       }, 700);
     }
 
@@ -407,16 +523,19 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     title: string,
     contextType: 'ACTIVITY' | 'ROUTINE' | 'PROJECT',
     parentTitle: string | null,
-    steps: RoutineStep[]
+    steps: RoutineStep[],
+    repeatCount: number = 1,
+    cycleBreakSeconds: number = 0
   ) => {
     const validSteps = steps.filter((s) => s.stages.length > 0);
     if (validSteps.length === 0) return;
 
     const firstStage = validSteps[0].stages[0];
-    const totalPlanned = validSteps.reduce(
+    const singleCyclePlanned = validSteps.reduce(
       (sum, step) => sum + step.stages.reduce((sSum, stage) => sSum + stage.durationSeconds, 0),
       0
     );
+    const totalPlanned = singleCyclePlanned * repeatCount + (cycleBreakSeconds * Math.max(0, repeatCount - 1));
 
     const newState: TimerState = {
       ...stateRef.current,
@@ -434,7 +553,12 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       records: [],
       completedSummary: null,
       mateRemainingSeconds: stateRef.current.mateIntervalMinutes * 60,
-      lastMateAlertTime: 0
+      lastMateAlertTime: 0,
+      totalCycles: Math.max(1, repeatCount),
+      currentCycle: 1,
+      cycleBreakSeconds,
+      isInCycleBreak: false,
+      cycleBreakRemainingSeconds: 0
     };
 
     setState(newState);
@@ -442,11 +566,20 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     postWorker('START');
 
     if (newState.isVoiceEnabled) {
-      SpeechService.speak(`Iniciando: ${firstStage.name}`);
+      if (repeatCount > 1) {
+        SpeechService.speak(`Iniciando Ciclo 1 de ${repeatCount}. ${firstStage.name}`);
+      } else {
+        SpeechService.speak(`Iniciando: ${firstStage.name}`);
+      }
     }
   };
 
-  const startSingleActivity = (activity: ActivityItem, customSessionName?: string) => {
+  const startSingleActivity = (
+    activity: ActivityItem,
+    customSessionName?: string,
+    repeatCount: number = 1,
+    cycleBreakSeconds: number = 0
+  ) => {
     const activeStages = activity.stages.filter((s) => s.isEnabled !== false);
     if (activeStages.length === 0) return;
 
@@ -457,18 +590,26 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       stages: activeStages,
       autoAdvance: true
     };
-    startSession(customSessionName?.trim() || activity.title, 'ACTIVITY', null, [step]);
+    startSession(customSessionName?.trim() || activity.title, 'ACTIVITY', null, [step], repeatCount, cycleBreakSeconds);
   };
 
-  const startRoutine = (routine: RoutineItem) => {
+  const startRoutine = (
+    routine: RoutineItem,
+    customSessionName?: string,
+    repeatCount: number = Math.max(1, routine.defaultRepeatCount || 1),
+    cycleBreakSeconds: number = routine.defaultCycleBreakSeconds || 0
+  ) => {
     const unrolledSteps = unrollRoutineSteps(routine.steps);
-    startSession(routine.title, 'ROUTINE', null, unrolledSteps);
+    startSession(customSessionName?.trim() || routine.title, 'ROUTINE', null, unrolledSteps, repeatCount, cycleBreakSeconds);
   };
 
   const startProject = (
     project: ProjectItem,
     activities: ActivityItem[],
-    routines: RoutineItem[]
+    routines: RoutineItem[],
+    customSessionName?: string,
+    repeatCount: number = Math.max(1, project.defaultRepeatCount || 1),
+    cycleBreakSeconds: number = project.defaultCycleBreakSeconds || 0
   ) => {
     const steps: RoutineStep[] = [];
 
@@ -506,7 +647,7 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
     }
 
-    startSession(project.title, 'PROJECT', project.title, steps);
+    startSession(customSessionName?.trim() || project.title, 'PROJECT', project.title, steps, repeatCount, cycleBreakSeconds);
   };
 
   const pause = () => {

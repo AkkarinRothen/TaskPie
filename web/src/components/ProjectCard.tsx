@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Play, Edit3, Trash2, Folder, Activity, Layers } from 'lucide-react';
 import type { ProjectItem } from '../types/models';
 import { useTimer } from '../context/TimerContext';
 import { useData } from '../context/DataContext';
-
 import { calculateRoutineTotalSeconds } from '../types/models';
+import { StartSessionModal } from './StartSessionModal';
 
 interface ProjectCardProps {
   project: ProjectItem;
@@ -14,6 +14,7 @@ interface ProjectCardProps {
 export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onEdit }) => {
   const { startProject } = useTimer();
   const { activities, routines, deleteProject } = useData();
+  const [showStartModal, setShowStartModal] = useState(false);
 
   const linkedActivities = activities.filter((a) => project.activityIds.includes(a.id));
   const routinesCount = project.projectRoutines?.length || project.routineIds.length;
@@ -191,7 +192,7 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onEdit }) => 
           <Trash2 size={15} color="#f43f5e" />
         </button>
         <button
-          onClick={() => startProject(project, activities, routines)}
+          onClick={() => setShowStartModal(true)}
           className="btn-primary btn-sm"
           style={{ gap: '6px' }}
         >
@@ -199,6 +200,19 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onEdit }) => 
           <span>Iniciar Todo</span>
         </button>
       </div>
+
+      <StartSessionModal
+        isOpen={showStartModal}
+        title={project.title}
+        defaultRepeatCount={project.defaultRepeatCount || 1}
+        defaultCycleBreakSeconds={project.defaultCycleBreakSeconds || 0}
+        cycleDurationSeconds={totalSeconds}
+        onDismiss={() => setShowStartModal(false)}
+        onStart={(customName, repeatCount, cycleBreakSeconds) => {
+          setShowStartModal(false);
+          startProject(project, activities, routines, customName, repeatCount, cycleBreakSeconds);
+        }}
+      />
     </div>
   );
 };

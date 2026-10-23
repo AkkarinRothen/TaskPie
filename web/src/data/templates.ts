@@ -75,6 +75,34 @@ export const BUILTIN_ACTIVITY_TEMPLATES: ActivityTemplate[] = [
     ]
   },
   {
+    id: 'tpl_solo_roleplay',
+    title: 'Sesión de Rol en Solitario',
+    description: 'Un bloque de una hora para jugar una aventura de rol a tu ritmo, sin necesitar grupo ni agentes.',
+    category: 'Juego',
+    tags: ['rol', 'juego', 'creatividad', 'solo'],
+    totalMinutes: 60,
+    stages: [
+      {
+        name: 'Preparar la partida',
+        durationSeconds: 5 * 60,
+        notes: 'Elige el juego, prepara dados o materiales y define una intención sencilla para la sesión.',
+        colorHex: '#8B5CF6'
+      },
+      {
+        name: 'Jugar la aventura',
+        durationSeconds: 45 * 60,
+        notes: 'Explora, interpreta y deja que las decisiones de tu personaje muevan la historia.',
+        colorHex: '#EC4899'
+      },
+      {
+        name: 'Anotar y cerrar',
+        durationSeconds: 10 * 60,
+        notes: 'Registra qué pasó, qué queda pendiente y una posible idea para la próxima partida.',
+        colorHex: '#F59E0B'
+      }
+    ]
+  },
+  {
     id: 'tpl_deep_work_60',
     title: 'Estudio y Trabajo Profundo (60 min)',
     description: 'Sesión integral para asimilar conceptos complejos o programación.',

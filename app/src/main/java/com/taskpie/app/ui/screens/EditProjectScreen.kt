@@ -1,10 +1,14 @@
 package com.taskpie.app.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,12 +27,23 @@ import androidx.compose.ui.unit.sp
 import com.taskpie.app.model.ActivityItem
 import com.taskpie.app.model.ProjectItem
 import com.taskpie.app.model.RoutineItem
+import com.taskpie.app.data.local.EditorDraftRead
+import com.taskpie.app.data.local.ProjectEditorDraft
 import com.taskpie.app.ui.components.StartSessionDialog
+import com.taskpie.app.ui.components.CreationStepIndicator
+import com.taskpie.app.ui.components.EditorDraftRecoveryDialog
+import com.taskpie.app.ui.components.InvalidEditorDraftDialog
+import com.taskpie.app.ui.components.EditorUndoHistory
+import com.taskpie.app.ui.components.DragReorderHandle
 import com.taskpie.app.ui.theme.*
 import com.taskpie.app.ui.viewmodel.TaskPieViewModel
 import java.util.UUID
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
+import androidx.compose.runtime.snapshotFlow
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun EditProjectScreen(
     viewModel: TaskPieViewModel,
@@ -44,39 +59,123 @@ fun EditProjectScreen(
         projects.find { it.id == projectId }
     }
 
+    val draftKey = remember(projectId) { viewModel.editorDraftKey("project", projectId) }
+    val draftRead = remember(draftKey) { viewModel.readProjectDraft(draftKey) }
+    var draftPromptVisible by remember(draftKey) {
+        mutableStateOf(draftRead is EditorDraftRead.Found)
+    }
+    var draftReadyToPersist by remember(draftKey) {
+        mutableStateOf(draftRead is EditorDraftRead.Missing)
+    }
+    var invalidDraftVisible by remember(draftKey) { mutableStateOf(false) }
+
     var title by remember(existingProject) { mutableStateOf(existingProject?.title ?: "") }
     var description by remember(existingProject) { mutableStateOf(existingProject?.description ?: "") }
     var selectedActivityIds by remember(existingProject) {
         mutableStateOf(existingProject?.activityIds?.toSet() ?: emptySet())
     }
-    var projectRoutines by remember(existingProject, routines) {
-        mutableStateOf(
-            if (!existingProject?.projectRoutines.isNullOrEmpty()) {
-                existingProject!!.projectRoutines
-            } else if (!existingProject?.routineIds.isNullOrEmpty()) {
-                existingProject!!.routineIds.mapNotNull { rId ->
-                    val r = routines.find { it.id == rId } ?: return@mapNotNull null
-                    com.taskpie.app.model.ProjectRoutineItem(
-                        routineId = r.id,
-                        title = r.title,
-                        steps = r.steps.map { st ->
-                            st.copy(stages = st.stages.map { s -> s.copy() })
-                        },
-                        isCustomized = false
-                    )
-                }
-            } else {
-                emptyList()
+    val baseProjectRoutines = remember(existingProject, routines) {
+        if (!existingProject?.projectRoutines.isNullOrEmpty()) {
+            existingProject!!.projectRoutines
+        } else if (!existingProject?.routineIds.isNullOrEmpty()) {
+            existingProject!!.routineIds.mapNotNull { rId ->
+                val routine = routines.find { it.id == rId } ?: return@mapNotNull null
+                com.taskpie.app.model.ProjectRoutineItem(
+                    routineId = routine.id,
+                    title = routine.title,
+                    steps = routine.steps.map { step -> step.copy(stages = step.stages.map { it.copy() }) },
+                    isCustomized = false
+                )
             }
-        )
+        } else {
+            emptyList()
+        }
     }
+    var projectRoutines by remember(existingProject, routines) { mutableStateOf(baseProjectRoutines) }
+    var selectedProjectRoutineIds by remember { mutableStateOf(setOf<String>()) }
+    var selectedLinkedActivityIds by remember { mutableStateOf(setOf<String>()) }
 
     var expandedProjectRoutineIds by remember { mutableStateOf(setOf<String>()) }
     var isSelectingRoutineForSequence by remember { mutableStateOf(false) }
+    var routineSearchQuery by remember { mutableStateOf("") }
+    var activitySearchQuery by remember { mutableStateOf("") }
     var activityToStart by remember { mutableStateOf<ActivityItem?>(null) }
     var routineToStart by remember { mutableStateOf<RoutineItem?>(null) }
     var isStartingFullProject by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var creationStep by remember(projectId) { mutableIntStateOf(if (projectId != null) 1 else 0) }
+    val editorListState = rememberLazyListState()
+    var reviewScrollTarget by remember { mutableIntStateOf(-1) }
+    val filteredRoutines = remember(routines, routineSearchQuery) {
+        if (routineSearchQuery.isBlank()) routines
+        else routines.filter { it.title.contains(routineSearchQuery.trim(), ignoreCase = true) }
+    }
+    val filteredActivities = remember(activities, activitySearchQuery) {
+        if (activitySearchQuery.isBlank()) activities
+        else activities.filter { it.title.contains(activitySearchQuery.trim(), ignoreCase = true) }
+    }
+    val baseDraft = remember(existingProject, baseProjectRoutines) {
+        existingProject?.let {
+            ProjectEditorDraft(
+                title = it.title,
+                description = it.description,
+                selectedActivityIds = it.activityIds.sorted(),
+                projectRoutines = baseProjectRoutines,
+                creationStep = 1
+            )
+        }
+    }
+
+    LaunchedEffect(draftKey, draftRead) {
+        if (draftRead is EditorDraftRead.Corrupt) {
+            viewModel.deleteEditorDraft(draftKey)
+            invalidDraftVisible = true
+            draftReadyToPersist = true
+        }
+    }
+
+    val currentDraft = ProjectEditorDraft(title, description, selectedActivityIds.sorted(), projectRoutines, creationStep)
+    val history = remember(draftKey) { EditorUndoHistory(currentDraft.copy(creationStep = 0)) }
+    LaunchedEffect(draftKey, draftReadyToPersist, draftPromptVisible) {
+        if (!draftReadyToPersist || draftPromptVisible) return@LaunchedEffect
+        snapshotFlow {
+            ProjectEditorDraft(title, description, selectedActivityIds.sorted(), projectRoutines, 0)
+        }.drop(1).collectLatest { snapshot ->
+            delay(500)
+            history.record(snapshot)
+        }
+    }
+    fun restoreHistory(snapshot: ProjectEditorDraft) {
+        title = snapshot.title
+        description = snapshot.description
+        selectedActivityIds = snapshot.selectedActivityIds.toSet()
+        projectRoutines = snapshot.projectRoutines
+    }
+    fun moveProjectRoutine(from: Int, to: Int) {
+        if (from !in projectRoutines.indices || to !in projectRoutines.indices) return
+        val reordered = projectRoutines.toMutableList()
+        reordered.add(to, reordered.removeAt(from))
+        projectRoutines = reordered
+    }
+    LaunchedEffect(creationStep, reviewScrollTarget, errorMessage, activitySearchQuery) {
+        if (creationStep == 1 && reviewScrollTarget >= 0) {
+            delay(100)
+            editorListState.animateScrollToItem(reviewScrollTarget.coerceAtMost(editorListState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0))
+            reviewScrollTarget = -1
+        }
+    }
+    val hasDraftChanges = if (projectId == null) {
+        title.isNotBlank() || description.isNotBlank() || selectedActivityIds.isNotEmpty() || projectRoutines.isNotEmpty()
+    } else {
+        baseDraft != null && currentDraft != baseDraft
+    }
+
+    LaunchedEffect(draftKey, title, description, selectedActivityIds, projectRoutines, creationStep, draftReadyToPersist, hasDraftChanges, existingProject) {
+        if (!draftReadyToPersist || (projectId != null && existingProject == null)) return@LaunchedEffect
+        delay(700)
+        if (hasDraftChanges) viewModel.saveEditorDraft(draftKey, currentDraft)
+        else viewModel.deleteEditorDraft(draftKey)
+    }
 
     val totalSequenceSeconds = remember(projectRoutines) {
         projectRoutines.sumOf { pr ->
@@ -86,6 +185,11 @@ fun EditProjectScreen(
         }
     }
     val totalSequenceMinutes = totalSequenceSeconds / 60
+
+    BackHandler(enabled = creationStep > 0) {
+        creationStep -= 1
+        errorMessage = null
+    }
 
     Scaffold(
         topBar = {
@@ -97,34 +201,62 @@ fun EditProjectScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                    IconButton(onClick = {
+                        if (creationStep > 0) {
+                            creationStep -= 1
+                            errorMessage = null
+                        } else {
+                            onNavigateBack()
+                        }
+                    }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = if (creationStep > 0) "Paso anterior" else "Volver")
                     }
                 },
                 actions = {
+                    IconButton(onClick = { history.undo()?.let(::restoreHistory) }, enabled = history.canUndo) {
+                        Icon(Icons.Default.Undo, contentDescription = "Deshacer")
+                    }
+                    IconButton(onClick = { history.redo()?.let(::restoreHistory) }, enabled = history.canRedo) {
+                        Icon(Icons.Default.Redo, contentDescription = "Rehacer")
+                    }
                     Button(
                         onClick = {
-                            if (title.isBlank()) {
-                                errorMessage = "Ingresa un título para el proyecto"
-                                return@Button
+                            when (creationStep) {
+                                0 -> if (title.isBlank()) {
+                                    errorMessage = "Ingresa un título para el proyecto"
+                                } else {
+                                    errorMessage = null
+                                    creationStep = 1
+                                }
+                                1 -> {
+                                    errorMessage = null
+                                    creationStep = 2
+                                }
+                                else -> {
+                                    if (title.isBlank()) {
+                                        creationStep = 0
+                                        errorMessage = "Ingresa un título para el proyecto"
+                                        return@Button
+                                    }
+                                    val item = ProjectItem(
+                                        id = existingProject?.id ?: UUID.randomUUID().toString(),
+                                        title = title.trim(),
+                                        description = description.trim(),
+                                        activityIds = selectedActivityIds.toList(),
+                                        routineIds = projectRoutines.map { it.routineId },
+                                        projectRoutines = projectRoutines,
+                                        createdAt = existingProject?.createdAt ?: System.currentTimeMillis()
+                                    )
+                                    viewModel.deleteEditorDraft(draftKey)
+                                    viewModel.saveProject(item)
+                                    onNavigateBack()
+                                }
                             }
-
-                            val item = ProjectItem(
-                                id = existingProject?.id ?: UUID.randomUUID().toString(),
-                                title = title.trim(),
-                                description = description.trim(),
-                                activityIds = selectedActivityIds.toList(),
-                                routineIds = projectRoutines.map { it.routineId },
-                                projectRoutines = projectRoutines,
-                                createdAt = existingProject?.createdAt ?: System.currentTimeMillis()
-                            )
-                            viewModel.saveProject(item)
-                            onNavigateBack()
                         },
                         shape = RoundedCornerShape(10.dp),
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                     ) {
-                        Text("Guardar", fontWeight = FontWeight.Bold)
+                        Text(when (creationStep) { 0 -> "Siguiente"; 1 -> "Revisar"; else -> "Guardar" }, fontWeight = FontWeight.Bold)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = LightBackground)
@@ -133,12 +265,15 @@ fun EditProjectScreen(
         containerColor = LightBackground
     ) { paddingValues ->
         LazyColumn(
+            state = editorListState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            item { CreationStepIndicator(creationStep) }
+            if (creationStep == 0) {
             // General Info Card
             item {
                 Card(
@@ -195,6 +330,7 @@ fun EditProjectScreen(
                     }
                 }
             }
+            }
 
             if (errorMessage != null) {
                 item {
@@ -207,6 +343,7 @@ fun EditProjectScreen(
                 }
             }
 
+            if (creationStep == 1) {
             // Routine Sequence Section Header
             item {
                 Row(
@@ -236,6 +373,14 @@ fun EditProjectScreen(
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Añadir Rutina", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                if (selectedProjectRoutineIds.isNotEmpty()) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = {
+                            projectRoutines = projectRoutines.filterNot { it.routineId in selectedProjectRoutineIds }
+                            selectedProjectRoutineIds = emptySet()
+                        }) { Text("Quitar ${selectedProjectRoutineIds.size} seleccionadas") }
                     }
                 }
             }
@@ -288,7 +433,18 @@ fun EditProjectScreen(
                     val durationMins = activeDurationSeconds / 60
 
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().combinedClickable(
+                            onClick = {
+                                if (selectedProjectRoutineIds.isNotEmpty()) {
+                                    val id = projectRoutine.routineId
+                                    selectedProjectRoutineIds = if (id in selectedProjectRoutineIds) selectedProjectRoutineIds - id else selectedProjectRoutineIds + id
+                                }
+                            },
+                            onLongClick = {
+                                val id = projectRoutine.routineId
+                                selectedProjectRoutineIds = if (id in selectedProjectRoutineIds) selectedProjectRoutineIds - id else selectedProjectRoutineIds + id
+                            }
+                        ),
                         shape = RoundedCornerShape(14.dp),
                         colors = CardDefaults.cardColors(containerColor = LightSurface),
                         border = BorderStroke(1.dp, LightBorder),
@@ -300,6 +456,15 @@ fun EditProjectScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
+                                if (selectedProjectRoutineIds.isNotEmpty()) {
+                                    Checkbox(
+                                        checked = projectRoutine.routineId in selectedProjectRoutineIds,
+                                        onCheckedChange = {
+                                            val id = projectRoutine.routineId
+                                            selectedProjectRoutineIds = if (id in selectedProjectRoutineIds) selectedProjectRoutineIds - id else selectedProjectRoutineIds + id
+                                        }
+                                    )
+                                }
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.weight(1f)
@@ -346,6 +511,8 @@ fun EditProjectScreen(
                                             )
                                         }
                                     }
+
+                                    DragReorderHandle(index, projectRoutines.size, ::moveProjectRoutine, Modifier.size(32.dp))
 
                                     Spacer(modifier = Modifier.width(8.dp))
 
@@ -612,32 +779,66 @@ fun EditProjectScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 Column {
                     Text(
-                        text = "Actividades Vinculadas",
+                        text = "Accesos individuales (opcional)",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
                     Text(
-                        text = "Selecciona actividades individuales de referencia para este proyecto",
+                        text = "Puedes iniciar estas actividades por separado; no forman parte de la secuencia completa.",
                         style = MaterialTheme.typography.bodyMedium.copy(
                             fontSize = 12.sp,
                             color = LightTextSecondary
                         ),
                         modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
                     )
+                    if (selectedLinkedActivityIds.isNotEmpty()) {
+                        TextButton(onClick = {
+                            selectedActivityIds = selectedActivityIds - selectedLinkedActivityIds
+                            selectedLinkedActivityIds = emptySet()
+                        }) { Text("Desvincular ${selectedLinkedActivityIds.size} seleccionadas") }
+                    }
+                    OutlinedTextField(
+                        value = activitySearchQuery,
+                        onValueChange = { activitySearchQuery = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("Buscar actividad vinculada") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        trailingIcon = {
+                            if (activitySearchQuery.isNotEmpty()) IconButton(onClick = { activitySearchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Limpiar búsqueda")
+                            }
+                        }
+                    )
                 }
             }
 
-            items(activities) { activity ->
+            if (activities.isEmpty()) {
+                item { Text("Todavía no hay actividades para vincular.", color = LightTextSecondary) }
+            } else if (filteredActivities.isEmpty()) {
+                item { Text("No se encontraron actividades con ese nombre.", color = LightTextSecondary) }
+            }
+
+            items(filteredActivities) { activity ->
                 val isSelected = selectedActivityIds.contains(activity.id)
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable {
+                        .combinedClickable(
+                            onClick = {
+                                if (selectedLinkedActivityIds.isNotEmpty()) {
+                                    selectedLinkedActivityIds = if (activity.id in selectedLinkedActivityIds) selectedLinkedActivityIds - activity.id else selectedLinkedActivityIds + activity.id
+                                } else {
                             selectedActivityIds = if (isSelected) {
                                 selectedActivityIds - activity.id
                             } else {
                                 selectedActivityIds + activity.id
                             }
-                        },
+                                }
+                            },
+                            onLongClick = {
+                                selectedLinkedActivityIds = if (activity.id in selectedLinkedActivityIds) selectedLinkedActivityIds - activity.id else selectedLinkedActivityIds + activity.id
+                            }
+                        ),
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = if (isSelected) PrimaryBlueLight else LightSurface
@@ -651,6 +852,14 @@ fun EditProjectScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
+                        if (selectedLinkedActivityIds.isNotEmpty()) {
+                            Checkbox(
+                                checked = activity.id in selectedLinkedActivityIds,
+                                onCheckedChange = {
+                                    selectedLinkedActivityIds = if (activity.id in selectedLinkedActivityIds) selectedLinkedActivityIds - activity.id else selectedLinkedActivityIds + activity.id
+                                }
+                            )
+                        }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.weight(1f)
@@ -698,6 +907,71 @@ fun EditProjectScreen(
                     }
                 }
             }
+            }
+            if (creationStep == 2) {
+                item {
+                    val totalMins = totalSequenceSeconds / 60
+                    val totalSecs = totalSequenceSeconds % 60
+                    val durationLabel = if (totalSecs > 0) "${totalMins}m ${totalSecs}s" else "${totalMins}m"
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = LightSurface)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("Revisar proyecto", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), modifier = Modifier.clickable { creationStep = 1; reviewScrollTarget = 1 })
+                            Text(title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.clickable { creationStep = 0 })
+                            if (description.isNotBlank()) Text(description, color = LightTextSecondary, modifier = Modifier.clickable { creationStep = 0 })
+                            Text("${projectRoutines.size} rutinas • $durationLabel de secuencia")
+                            if (projectRoutines.isEmpty()) {
+                                Text("Todavía no hay rutinas. Puedes guardar el proyecto y completarlo después.", color = LightTextSecondary)
+                            } else {
+                                projectRoutines.forEachIndexed { index, routine ->
+                                    val includedStages = routine.steps.sumOf { step -> step.stages.count { it.isEnabled } }
+                                    val allStages = routine.steps.sumOf { it.stages.size }
+                                    Text("${index + 1}. ${routine.title}", fontWeight = FontWeight.SemiBold, modifier = Modifier.fillMaxWidth().clickable {
+                                        creationStep = 1
+                                        reviewScrollTarget = 2 + (if (errorMessage != null) 1 else 0) + index
+                                    })
+                                    routine.steps.forEach { step ->
+                                        val active = step.stages.count { it.isEnabled }
+                                        Text(
+                                            text = "  • ${step.activityTitle}: $active de ${step.stages.size} etapas",
+                                            style = MaterialTheme.typography.bodySmall.copy(color = LightTextSecondary),
+                                            modifier = Modifier.fillMaxWidth().clickable {
+                                                creationStep = 1
+                                                reviewScrollTarget = 2 + (if (errorMessage != null) 1 else 0) + projectRoutines.indexOf(routine)
+                                            }
+                                        )
+                                    }
+                                    if (includedStages < allStages) {
+                                        Text("  $includedStages de $allStages etapas incluidas", style = MaterialTheme.typography.labelSmall.copy(color = LightTextSecondary))
+                                    }
+                                }
+                            }
+                            HorizontalDivider()
+                            Text("Actividades vinculadas (${selectedActivityIds.size})", fontWeight = FontWeight.SemiBold, modifier = Modifier.fillMaxWidth().clickable {
+                                creationStep = 1
+                                reviewScrollTarget = 2 + (if (errorMessage != null) 1 else 0) + maxOf(projectRoutines.size, 1)
+                            })
+                            Text("Se pueden iniciar por separado y no se suman a la secuencia.", style = MaterialTheme.typography.bodySmall.copy(color = LightTextSecondary))
+                            val linkedActivities = activities.filter { it.id in selectedActivityIds }
+                            if (linkedActivities.isEmpty()) {
+                                Text("Ninguna actividad vinculada", style = MaterialTheme.typography.bodySmall.copy(color = LightTextSecondary))
+                            } else {
+                                linkedActivities.forEach { activity ->
+                                    Text("• ${activity.title} — ${activity.formattedTotalDuration()}", modifier = Modifier.fillMaxWidth().clickable {
+                                        activitySearchQuery = ""
+                                        creationStep = 1
+                                        val activityIndex = activities.indexOfFirst { it.id == activity.id }.coerceAtLeast(0)
+                                        reviewScrollTarget = 3 + (if (errorMessage != null) 1 else 0) + maxOf(projectRoutines.size, 1) + activityIndex
+                                    })
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -713,13 +987,29 @@ fun EditProjectScreen(
                 )
             },
             text = {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 400.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(routines) { routine ->
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = routineSearchQuery,
+                        onValueChange = { routineSearchQuery = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("Buscar rutina") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        trailingIcon = {
+                            if (routineSearchQuery.isNotEmpty()) IconButton(onClick = { routineSearchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Limpiar búsqueda")
+                            }
+                        }
+                    )
+                    if (routines.isEmpty()) {
+                        Text("Todavía no hay rutinas para añadir.", color = LightTextSecondary)
+                    } else if (filteredRoutines.isEmpty()) {
+                        Text("No se encontraron rutinas con ese nombre.", color = LightTextSecondary)
+                    } else LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                    items(filteredRoutines) { routine ->
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -753,6 +1043,7 @@ fun EditProjectScreen(
                             }
                         }
                     }
+                    }
                 }
             },
             confirmButton = {},
@@ -777,9 +1068,11 @@ fun EditProjectScreen(
             defaultTitle = proj.title,
             totalDurationFormatted = "${totalSequenceMinutes}m",
             initialVoiceEnabled = viewModel.getVoiceEnabledPreference(),
+            initialRepeatCount = proj.defaultRepeatCount,
+            initialCycleBreakSeconds = proj.defaultCycleBreakSeconds,
             onDismiss = { isStartingFullProject = false },
-            onStart = { customName, voiceEnabled ->
-                viewModel.startProjectSession(proj, customName, voiceEnabled)
+            onStart = { customName, voiceEnabled, repeatCount, cycleBreakSeconds ->
+                viewModel.startProjectSession(proj, customName, voiceEnabled, repeatCount, cycleBreakSeconds)
                 isStartingFullProject = false
                 onNavigateToActiveSession()
             }
@@ -793,8 +1086,8 @@ fun EditProjectScreen(
             totalDurationFormatted = activity.formattedTotalDuration(),
             initialVoiceEnabled = viewModel.getVoiceEnabledPreference(),
             onDismiss = { activityToStart = null },
-            onStart = { customName, voiceEnabled ->
-                viewModel.startProjectActivitySession(title, activity, customName, voiceEnabled)
+            onStart = { customName, voiceEnabled, repeatCount, cycleBreakSeconds ->
+                viewModel.startProjectActivitySession(title, activity, customName, voiceEnabled, repeatCount, cycleBreakSeconds)
                 activityToStart = null
                 onNavigateToActiveSession()
             }
@@ -807,12 +1100,44 @@ fun EditProjectScreen(
             defaultTitle = "${title}: ${routine.title}",
             totalDurationFormatted = routine.formattedTotalDuration(),
             initialVoiceEnabled = viewModel.getVoiceEnabledPreference(),
+            initialRepeatCount = routine.defaultRepeatCount,
+            initialCycleBreakSeconds = routine.defaultCycleBreakSeconds,
             onDismiss = { routineToStart = null },
-            onStart = { customName, voiceEnabled ->
-                viewModel.startRoutineSession(routine, customName, voiceEnabled)
+            onStart = { customName, voiceEnabled, repeatCount, cycleBreakSeconds ->
+                viewModel.startRoutineSession(routine, customName, voiceEnabled, repeatCount, cycleBreakSeconds)
                 routineToStart = null
                 onNavigateToActiveSession()
             }
         )
+    }
+
+    when (val loadedDraft = draftRead) {
+        is EditorDraftRead.Found -> if (draftPromptVisible) {
+            EditorDraftRecoveryDialog(
+                itemType = "proyecto",
+                onContinue = {
+                    loadedDraft.value.let { draft ->
+                        title = draft.title
+                        description = draft.description
+                        selectedActivityIds = draft.selectedActivityIds.toSet()
+                        projectRoutines = draft.projectRoutines
+                        creationStep = draft.creationStep.coerceIn(0, 2)
+                        history.reset(draft.copy(creationStep = 0))
+                    }
+                    draftPromptVisible = false
+                    draftReadyToPersist = true
+                },
+                onDiscard = {
+                    viewModel.deleteEditorDraft(draftKey)
+                    history.reset(currentDraft.copy(creationStep = 0))
+                    draftPromptVisible = false
+                    draftReadyToPersist = true
+                }
+            )
+        }
+        EditorDraftRead.Corrupt -> if (invalidDraftVisible) {
+            InvalidEditorDraftDialog(onDismiss = { invalidDraftVisible = false })
+        }
+        EditorDraftRead.Missing -> Unit
     }
 }

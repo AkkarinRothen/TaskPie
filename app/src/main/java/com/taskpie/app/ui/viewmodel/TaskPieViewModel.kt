@@ -4,6 +4,11 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.taskpie.app.TaskPieApplication
+import com.taskpie.app.data.local.ActivityEditorDraft
+import com.taskpie.app.data.local.EditorDraftRead
+import com.taskpie.app.data.local.EditorDraftStore
+import com.taskpie.app.data.local.ProjectEditorDraft
+import com.taskpie.app.data.local.RoutineEditorDraft
 import com.taskpie.app.model.ActivityItem
 import com.taskpie.app.model.FolderItem
 import com.taskpie.app.model.ProjectItem
@@ -20,6 +25,16 @@ import java.util.UUID
 class TaskPieViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = (application as TaskPieApplication).repository
+    private val editorDraftStore = EditorDraftStore(application)
+
+    internal fun editorDraftKey(type: String, itemId: String?): String = editorDraftStore.key(type, itemId)
+
+    internal fun readActivityDraft(key: String) = editorDraftStore.read(key, ActivityEditorDraft::class.java)
+    internal fun readRoutineDraft(key: String) = editorDraftStore.read(key, RoutineEditorDraft::class.java)
+    internal fun readProjectDraft(key: String) = editorDraftStore.read(key, ProjectEditorDraft::class.java)
+
+    internal fun saveEditorDraft(key: String, draft: Any) = editorDraftStore.save(key, draft)
+    internal fun deleteEditorDraft(key: String) = editorDraftStore.delete(key)
 
     init {
         TimerController.initialize(application)
@@ -136,27 +151,54 @@ class TaskPieViewModel(application: Application) : AndroidViewModel(application)
         TimerController.toggleVoice()
     }
 
-    fun startActivitySession(activity: ActivityItem, sessionName: String? = null, voiceEnabled: Boolean? = null) {
-        TimerController.startSingleActivitySession(getApplication(), activity, sessionName, voiceEnabled)
+    fun startActivitySession(
+        activity: ActivityItem,
+        sessionName: String? = null,
+        voiceEnabled: Boolean? = null,
+        repeatCount: Int = 1,
+        cycleBreakSeconds: Long = 0L
+    ) {
+        TimerController.startSingleActivitySession(getApplication(), activity, sessionName, voiceEnabled, repeatCount, cycleBreakSeconds)
     }
 
-    fun startRoutineSession(routine: RoutineItem, sessionName: String? = null, voiceEnabled: Boolean? = null) {
-        TimerController.startRoutineSession(getApplication(), routine, sessionName, voiceEnabled)
+    fun startRoutineSession(
+        routine: RoutineItem,
+        sessionName: String? = null,
+        voiceEnabled: Boolean? = null,
+        repeatCount: Int = 1,
+        cycleBreakSeconds: Long = 0L
+    ) {
+        TimerController.startRoutineSession(getApplication(), routine, sessionName, voiceEnabled, repeatCount, cycleBreakSeconds)
     }
 
-    fun startProjectSession(project: ProjectItem, sessionName: String? = null, voiceEnabled: Boolean? = null) {
+    fun startProjectSession(
+        project: ProjectItem,
+        sessionName: String? = null,
+        voiceEnabled: Boolean? = null,
+        repeatCount: Int = 1,
+        cycleBreakSeconds: Long = 0L
+    ) {
         TimerController.startProjectSession(
             getApplication(),
             project,
             activities.value,
             routines.value,
             sessionName,
-            voiceEnabled
+            voiceEnabled,
+            repeatCount,
+            cycleBreakSeconds
         )
     }
 
-    fun startProjectActivitySession(projectName: String, activity: ActivityItem, sessionName: String? = null, voiceEnabled: Boolean? = null) {
-        TimerController.startProjectActivitySession(getApplication(), projectName, activity, sessionName, voiceEnabled)
+    fun startProjectActivitySession(
+        projectName: String,
+        activity: ActivityItem,
+        sessionName: String? = null,
+        voiceEnabled: Boolean? = null,
+        repeatCount: Int = 1,
+        cycleBreakSeconds: Long = 0L
+    ) {
+        TimerController.startProjectActivitySession(getApplication(), projectName, activity, sessionName, voiceEnabled, repeatCount, cycleBreakSeconds)
     }
 
     fun pauseTimer() {

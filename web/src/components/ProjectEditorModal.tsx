@@ -31,6 +31,7 @@ export const ProjectEditorModal: React.FC<ProjectEditorModalProps> = ({
   const [title, setTitle] = useState(initialProject?.title || '');
   const [description, setDescription] = useState(initialProject?.description || '');
   const [tags, setTags] = useState<string[]>(initialProject?.tags || []);
+  const [creationStep, setCreationStep] = useState<1 | 2>(initialProject ? 2 : 1);
   const [selectedActivityIds, setSelectedActivityIds] = useState<string[]>(
     initialProject?.activityIds || []
   );
@@ -277,9 +278,18 @@ export const ProjectEditorModal: React.FC<ProjectEditorModalProps> = ({
               {initialProject ? 'Editar Proyecto' : 'Nuevo Proyecto'}
             </h3>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
-              Secuencia ordenada de rutinas con exclusión granular y snapshots desacoplados
+                {creationStep === 1
+                  ? 'Define el objetivo y los datos básicos del proyecto.'
+                  : 'Ordena las rutinas y revisa el tiempo estimado.'}
             </p>
           </div>
+            <div aria-label="Pasos de creación" style={{ display: 'flex', gap: 8, marginLeft: 'auto', marginRight: 12 }}>
+              {[{ step: 1, label: 'Detalles' }, { step: 2, label: 'Plan' }].map(({ step, label }) => (
+                <span key={step} style={{ padding: '5px 10px', borderRadius: 20, fontSize: '0.75rem', fontWeight: 700, color: creationStep === step ? '#fff' : 'var(--text-muted)', background: creationStep === step ? 'var(--accent-primary)' : 'var(--bg-tertiary)' }}>
+                  {step}. {label}
+                </span>
+              ))}
+            </div>
           <button onClick={onClose} className="btn-ghost btn-icon">
             <X size={20} />
           </button>
@@ -295,6 +305,7 @@ export const ProjectEditorModal: React.FC<ProjectEditorModalProps> = ({
             gap: '20px'
           }}
         >
+            <div style={{ display: creationStep === 1 ? 'flex' : 'none', flexDirection: 'column', gap: 20 }}>
           <div>
             <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
               Título del Proyecto *
@@ -335,8 +346,10 @@ export const ProjectEditorModal: React.FC<ProjectEditorModalProps> = ({
               style={{ marginTop: '6px', resize: 'none' }}
             />
           </div>
+            </div>
 
           {/* Secuencia Ordenada de Rutinas */}
+            <div style={{ display: creationStep === 2 ? 'flex' : 'none', flexDirection: 'column', gap: 20 }}>
           <div>
             <div
               style={{
@@ -766,6 +779,7 @@ export const ProjectEditorModal: React.FC<ProjectEditorModalProps> = ({
               </div>
             </div>
           )}
+            </div>
         </div>
 
         {/* Footer */}
@@ -783,10 +797,21 @@ export const ProjectEditorModal: React.FC<ProjectEditorModalProps> = ({
           <button type="button" onClick={onClose} className="btn btn-secondary">
             Cancelar
           </button>
-          <button type="button" onClick={handleSave} className="btn btn-primary" style={{ gap: '8px' }}>
+          {creationStep === 2 && <button type="button" onClick={() => setCreationStep(1)} className="btn btn-secondary">
+            Volver
+          </button>}
+          {creationStep === 1 ? <button type="button" onClick={() => {
+            if (!title.trim()) {
+              alert('Por favor ingresa un título para el proyecto.');
+              return;
+            }
+            setCreationStep(2);
+          }} className="btn btn-primary">
+            Siguiente: plan
+          </button> : <button type="button" onClick={handleSave} className="btn btn-primary" style={{ gap: '8px' }}>
             <Save size={16} />
             <span>Guardar Proyecto</span>
-          </button>
+          </button>}
         </div>
       </div>
     </div>

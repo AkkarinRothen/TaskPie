@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Play, Edit3, Trash2, Clock, Sparkles, Layers } from 'lucide-react';
 import type { RoutineItem } from '../types/models';
 import { useTimer } from '../context/TimerContext';
 import { useData } from '../context/DataContext';
-
 import { calculateRoutineTotalSeconds } from '../types/models';
+import { StartSessionModal } from './StartSessionModal';
 
 interface RoutineCardProps {
   routine: RoutineItem;
@@ -14,6 +14,7 @@ interface RoutineCardProps {
 export const RoutineCard: React.FC<RoutineCardProps> = ({ routine, onEdit }) => {
   const { startRoutine } = useTimer();
   const { deleteRoutine } = useData();
+  const [showStartModal, setShowStartModal] = useState(false);
 
   const totalSeconds = calculateRoutineTotalSeconds(routine.steps);
   const totalStages = routine.steps.reduce((acc, step) => acc + step.stages.length, 0);
@@ -204,7 +205,7 @@ export const RoutineCard: React.FC<RoutineCardProps> = ({ routine, onEdit }) => 
             </button>
           )}
           <button
-            onClick={() => startRoutine(routine)}
+            onClick={() => setShowStartModal(true)}
             className="btn-primary btn-sm"
             style={{ gap: '6px' }}
           >
@@ -213,6 +214,19 @@ export const RoutineCard: React.FC<RoutineCardProps> = ({ routine, onEdit }) => 
           </button>
         </div>
       </div>
+
+      <StartSessionModal
+        isOpen={showStartModal}
+        title={routine.title}
+        defaultRepeatCount={routine.defaultRepeatCount || 1}
+        defaultCycleBreakSeconds={routine.defaultCycleBreakSeconds || 0}
+        cycleDurationSeconds={totalSeconds}
+        onDismiss={() => setShowStartModal(false)}
+        onStart={(customName, repeatCount, cycleBreakSeconds) => {
+          setShowStartModal(false);
+          startRoutine(routine, customName, repeatCount, cycleBreakSeconds);
+        }}
+      />
     </div>
   );
 };

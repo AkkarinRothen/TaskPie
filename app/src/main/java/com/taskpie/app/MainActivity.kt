@@ -20,15 +20,19 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.core.content.ContextCompat
 import androidx.navigation.compose.rememberNavController
 import com.taskpie.app.service.TimerController
 import com.taskpie.app.service.TimerStatus
+import com.taskpie.app.ui.components.ApkUpdatePrompt
 import com.taskpie.app.ui.components.PipTimerView
 import com.taskpie.app.ui.navigation.Screen
 import com.taskpie.app.ui.navigation.TaskPieNavHost
+import com.taskpie.app.ui.navigation.HomeLibraryState
 import com.taskpie.app.ui.theme.TaskPieTheme
 import com.taskpie.app.ui.viewmodel.TaskPieViewModel
 
@@ -77,6 +81,32 @@ class MainActivity : ComponentActivity() {
             TaskPieTheme {
                 val timerState by viewModel.timerState.collectAsState()
                 val navController = rememberNavController()
+                val selectedTabState = rememberSaveable { mutableIntStateOf(0) }
+                val categoryFilterState = rememberSaveable { mutableStateOf("Todas") }
+                val searchActiveState = rememberSaveable { mutableStateOf(false) }
+                val searchQueryState = rememberSaveable { mutableStateOf("") }
+                val selectedActivityIdState = rememberSaveable { mutableStateOf<String?>(null) }
+                val selectedRoutineIdState = rememberSaveable { mutableStateOf<String?>(null) }
+                val selectedProjectIdState = rememberSaveable { mutableStateOf<String?>(null) }
+                val activityListState = rememberLazyListState()
+                val routineListState = rememberLazyListState()
+                val projectListState = rememberLazyListState()
+                val historyListState = rememberLazyListState()
+                val libraryState = remember {
+                    HomeLibraryState(
+                        selectedTab = selectedTabState,
+                        categoryFilter = categoryFilterState,
+                        searchActive = searchActiveState,
+                        searchQuery = searchQueryState,
+                        selectedActivityId = selectedActivityIdState,
+                        selectedRoutineId = selectedRoutineIdState,
+                        selectedProjectId = selectedProjectIdState,
+                        activityListState = activityListState,
+                        routineListState = routineListState,
+                        projectListState = projectListState,
+                        historyListState = historyListState
+                    )
+                }
 
                 // Keep PiP actions and auto-enter params updated with timer state
                 LaunchedEffect(timerState.status) {
@@ -86,11 +116,16 @@ class MainActivity : ComponentActivity() {
                 Box(modifier = Modifier.fillMaxSize()) {
                     TaskPieNavHost(
                         navController = navController,
-                        viewModel = viewModel
+                        viewModel = viewModel,
+                        libraryState = libraryState
                     )
 
                     if (isInPipMode) {
                         PipTimerView(timerState = timerState)
+                    }
+
+                    if (timerState.status == TimerStatus.IDLE || timerState.status == TimerStatus.COMPLETED) {
+                        ApkUpdatePrompt()
                     }
                 }
 

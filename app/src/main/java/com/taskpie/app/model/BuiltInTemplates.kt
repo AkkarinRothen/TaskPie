@@ -72,6 +72,38 @@ object BuiltInTemplates {
         )
     )
 
+    val SOLO_ROLEPLAY = ActivityItem(
+        id = "tpl_solo_roleplay",
+        title = "Sesión de Rol en Solitario",
+        description = "Un bloque de una hora para jugar una aventura de rol a tu ritmo, sin necesitar grupo ni agentes.",
+        category = "Juego",
+        tags = listOf("rol", "juego", "creatividad", "solo"),
+        isTemplate = true,
+        stages = listOf(
+            Stage(
+                id = "s_sr1",
+                name = "Preparar la partida",
+                durationSeconds = 5 * 60L,
+                notes = "Elige el juego, prepara dados o materiales y define una intención sencilla para la sesión.",
+                colorHex = "#8B5CF6"
+            ),
+            Stage(
+                id = "s_sr2",
+                name = "Jugar la aventura",
+                durationSeconds = 45 * 60L,
+                notes = "Explora, interpreta y deja que las decisiones de tu personaje muevan la historia.",
+                colorHex = "#EC4899"
+            ),
+            Stage(
+                id = "s_sr3",
+                name = "Anotar y cerrar",
+                durationSeconds = 10 * 60L,
+                notes = "Registra qué pasó, qué queda pendiente y una posible idea para la próxima partida.",
+                colorHex = "#F59E0B"
+            )
+        )
+    )
+
     val REST_ACTIVITY = ActivityItem(
         id = "tpl_rest_activity",
         title = "Descanso Consciente",
@@ -280,6 +312,7 @@ object BuiltInTemplates {
     val DEFAULT_ACTIVITIES = listOf(
         WRITING_SPRINT,
         RAPID_FREEWRITING,
+        SOLO_ROLEPLAY,
         REST_ACTIVITY,
         CLEAN_KITCHEN_ACTIVITY,
         STUDY_SESSION,
@@ -379,10 +412,66 @@ object BuiltInTemplates {
         )
     )
 
+    val SOLO_ROLEPLAY_ROUTINE = RoutineItem(
+        id = "tpl_routine_solo_roleplay",
+        title = "Sesión de Campaña en Solitario",
+        description = "Retoma el hilo de la campaña, juega una escena y deja apuntada la continuidad para la próxima sesión.",
+        tags = listOf("rol", "campaña", "solo"),
+        isTemplate = true,
+        steps = listOf(
+            RoutineStep(
+                id = "step_sr_recap",
+                activityId = SOLO_ROLEPLAY.id,
+                activityTitle = "Retomar la campaña",
+                stages = listOf(
+                    Stage(
+                        id = "s_sr_recap",
+                        name = "Leer las notas y elegir un objetivo",
+                        durationSeconds = 5 * 60L,
+                        notes = "Repasa dónde quedó la historia y elige una escena o pregunta para explorar hoy.",
+                        colorHex = "#8B5CF6"
+                    )
+                ),
+                autoAdvance = true
+            ),
+            RoutineStep(
+                id = "step_sr_play",
+                activityId = SOLO_ROLEPLAY.id,
+                activityTitle = "Jugar la aventura",
+                stages = listOf(
+                    Stage(
+                        id = "s_sr_play",
+                        name = "Explorar e interpretar",
+                        durationSeconds = 45 * 60L,
+                        notes = "Juega a tu ritmo y deja que las decisiones de tu personaje guíen la sesión.",
+                        colorHex = "#EC4899"
+                    )
+                ),
+                autoAdvance = true
+            ),
+            RoutineStep(
+                id = "step_sr_close",
+                activityId = SOLO_ROLEPLAY.id,
+                activityTitle = "Guardar la continuidad",
+                stages = listOf(
+                    Stage(
+                        id = "s_sr_close",
+                        name = "Anotar lo ocurrido y el próximo paso",
+                        durationSeconds = 10 * 60L,
+                        notes = "Registra decisiones, personajes o pistas importantes y una idea para retomar la historia.",
+                        colorHex = "#F59E0B"
+                    )
+                ),
+                autoAdvance = true
+            )
+        )
+    )
+
     val DEFAULT_ROUTINES = listOf(
         MASTER_WRITING_ROUTINE,
         ROUTINE_ANTI_INERTIA_MEDIUM,
-        ROUTINE_ANTI_INERTIA_DEEP
+        ROUTINE_ANTI_INERTIA_DEEP,
+        SOLO_ROLEPLAY_ROUTINE
     )
 
     val DEFAULT_PROJECT = ProjectItem(
@@ -407,5 +496,14 @@ object BuiltInTemplates {
             ROUTINE_ANTI_INERTIA_MEDIUM.id,
             ROUTINE_ANTI_INERTIA_DEEP.id
         )
+    )
+
+    val PROJECT_SOLO_ROLEPLAY_CAMPAIGN = ProjectItem(
+        id = "tpl_project_solo_roleplay_campaign",
+        title = "Campaña de Rol en Solitario",
+        description = "Un espacio para organizar las sesiones de tu campaña y retomar la historia con una rutina de juego y continuidad.",
+        activityIds = listOf(SOLO_ROLEPLAY.id),
+        routineIds = listOf(SOLO_ROLEPLAY_ROUTINE.id),
+        tags = listOf("rol", "campaña", "solo")
     )
 }

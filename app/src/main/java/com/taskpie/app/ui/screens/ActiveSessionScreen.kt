@@ -239,6 +239,37 @@ fun ActiveSessionScreen(
                         .padding(horizontal = 20.dp, vertical = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    // Multi-cycle Badge
+                    if (timerState.totalCycles > 1) {
+                        Surface(
+                            modifier = Modifier
+                                .padding(bottom = 12.dp)
+                                .clip(RoundedCornerShape(16.dp)),
+                            color = if (timerState.isInCycleBreak) AccentAmberLight else PrimaryBlueLight,
+                            border = BorderStroke(1.dp, if (timerState.isInCycleBreak) AccentAmber else PrimaryBlue)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = if (timerState.isInCycleBreak) AccentAmber else PrimaryBlue
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (timerState.isInCycleBreak) "☕ Descanso entre Ciclos" else "🔁 Ciclo ${timerState.currentCycle} de ${timerState.totalCycles}",
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (timerState.isInCycleBreak) AccentAmber else PrimaryBlue
+                                    )
+                                )
+                            }
+                        }
+                    }
+
                     // Current Activity Indicator (in Routine)
                     if (timerState.routineSteps.size > 1) {
                         val currentAct = timerState.currentActivity

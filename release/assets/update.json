@@ -1,0 +1,7 @@
+{
+  "versionCode": 2,
+  "versionName": "1.0.1",
+  "apkAsset": "TaskPie-1.0.1.apk",
+  "sha256": "62a825bc6b3c39820e853ab78bbec32b582add0185a46cbf36498e3adeb398d3",
+  "releaseNotes": "Primer APK de distribución directa. Incluye comprobación de actualizaciones desde GitHub Releases, verificación de integridad de la descarga y las mejoras recientes de TaskPie."
+}
